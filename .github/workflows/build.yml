@@ -1,6 +1,7 @@
 # Builds FLUDD Weapons for every platform the game runs on, and makes a zip: fludd-weapons/ with a
 # library for each platform, which players unzip into the game's mods/ folder. A release is made
-# only on a tag (v1.0.0, ...).
+# on a tag (v1.0.0, ...), or on main when mod/mod.ini's version has no release yet: raise the
+# version to release.
 name: build
 
 on:
@@ -99,7 +100,7 @@ jobs:
           path: ${{ env.zip }}
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     needs: package
     runs-on: ubuntu-24.04
     permissions:
@@ -114,9 +115,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v$(sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*//p' mod/mod.ini | head -1 | tr -d '\r')"
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "$tag is already released; raise the version in mod/mod.ini to release again"
+              exit 0
+            fi
+          fi
           cat > notes.md <<'NOTES'
           Unzip into the game's `mods` folder.
 
           Needs a game build with `api->held_fludd` (Allebale's First Person builds). Works on its own or with the First Person mod (https://github.com/Allebale/sms-first-person-mod).
           NOTES
-          gh release create "$GITHUB_REF_NAME" zip/*.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "FLUDD Weapons $GITHUB_REF_NAME" --notes-file notes.md
+          gh release create "$tag" zip/*.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "FLUDD Weapons $tag" --notes-file notes.md
