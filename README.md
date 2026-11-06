@@ -4,7 +4,7 @@ A mod for the Super Mario Sunshine PC port: FLUDD fires a Rifle, a Submachine gu
 
 - D-pad left and right choose the weapon, R fires.
 - D-pad up zooms the Rifle, with a sniper scope.
-- The Bazooka's burst throws enemies and fruit, and rocket jumps you in first person while you hold L (Shift) or Left Ctrl, as Team Fortress 2's crouch (or always, or never, in the settings).
+- The Bazooka's burst throws enemies and fruit, and rocket jumps you in first person while you hold Left Ctrl or Left Shift (L), as Team Fortress 2's crouch (or always, or never, in the settings).
 - Long range, Shadow Mario difficulty and every weapon's numbers are in the mod's settings.
 
 Needs a game build with `api->held_fludd` (Allebale's First Person builds). Works with the

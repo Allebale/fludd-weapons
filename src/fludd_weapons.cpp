@@ -48,12 +48,12 @@ const int kRangeCount       = 6;
 const char* const kShadowLevels[] = {"Very easy", "Easy", "Normal", "Hard", "Very hard", "Extreme"};
 const float kShadowDamage[]       = {2.0f, 1.4f, 1.0f, 0.6f, 0.35f, 0.2f};
 const int kShadowCount            = 6;
-// Rocket jumps: never, always, or only while L or the rocket jump key is held (as Team Fortress 2's
+// Rocket jumps: never, always, or only while the rocket jump key is held (as Team Fortress 2's
 // crouch), so shots at enemies close by do not throw Mario
-const char* const kRocketModes[] = {"Off", "Always", "While L or the key is held"};
+const char* const kRocketModes[] = {"Off", "Always", "While the key is held"};
 const int kRocketModeCount       = 3;
-const char* const kRocketKeys[]  = {"Left Ctrl", "Left Alt", "C", "V", "F", "Caps Lock"}; // SDL key names
-const int kRocketKeyCount        = 6;
+const char* const kRocketKeys[]  = {"Left Ctrl", "Left Shift (L)"}; // Left Shift is L: a controller's L too
+const int kRocketKeyCount        = 2;
 
 } // namespace
 
@@ -181,17 +181,17 @@ struct FluddWeapons : sms::Mod {
 		info("rifle zoom %s", zoomed ? "on" : "off");
 	}
 
-	// Rocket jumps now: the setting, and with "While L or the key is held" L (Shift) or the key
+	// Rocket jumps now: the setting, and with "While the key is held" Left Ctrl, or L (Left Shift)
 	bool rocketJumpOn() const
 	{
 		const int mode = setting("rocket_jump", 2);
 		if (mode != 2)
 			return mode == 1;
-		const SmsPad p = pad(0);
-		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
-			return true;
-		const int k = setting("rocket_jump_key", 0);
-		const int sc = input().key_from_name(kRocketKeys[k >= 0 && k < kRocketKeyCount ? k : 0]);
+		if (setting("rocket_jump_key", 0) == 1) {
+			const SmsPad p = pad(0);
+			return (p.held & SMS_PAD_L) || p.trigger_l >= 0.5f;
+		}
+		const int sc = input().key_from_name("Left Ctrl");
 		return sc > 0 && input().key_down(sc);
 	}
 
@@ -382,7 +382,7 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("bazooka_lift", "Bazooka air height (percent)", 60, 0, 400, 10);
 		optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
-		optionChoice("rocket_jump_key", "Rocket jump key (or hold L)",
+		optionChoice("rocket_jump_key", "Rocket jump key",
 		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 0);
 		optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 
