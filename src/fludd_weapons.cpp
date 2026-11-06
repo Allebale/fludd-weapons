@@ -346,7 +346,7 @@ struct FluddWeapons : sms::Mod {
 		optionBool("weapons_defeat", "FLUDD weapons can defeat enemies", true);
 		optionBool("third_person_weapons", "FLUDD weapons in third person too", true);
 		optionBool("third_person_models", "Weapon packs in place of FLUDD in third person", true);
-		optionBool("boss_balance", "Weapons made for bosses (not Shadow Mario)", true);
+		optionBool("boss_balance", "Weapons made for bosses, not Shadow Mario (Coming Soon)", true);
 		optionBool("normal_defeat", "FLUDD can defeat enemies", true);
 		optionNumber("normal_defeat_time", "FLUDD time to defeat (tenths of a second)", 4, 1, 100, 1);
 		optionChoice("long_range", "Long range (enemies and characters seen and hit further away)",
