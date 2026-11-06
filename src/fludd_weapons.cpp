@@ -260,7 +260,8 @@ struct FluddWeapons : sms::Mod {
 		}
 		const SmsHeldFluddState s = state();
 		const int w               = weaponNow();
-		const int defeat          = (setting("weapons_defeat", 1) ? SMS_SPRAY_DEFEAT : 0) | (rHeld ? 2 : 0);
+		const int defeat          = (setting("weapons_defeat", 1) ? SMS_SPRAY_DEFEAT : 0) | (rHeld ? 2 : 0)
+		                 | (setting("boss_balance", 1) ? SMS_SPRAY_BOSSES : 0);
 		const int normal          = setting("normal_defeat", 1) ? SMS_SPRAY_DEFEAT_NORMAL : 0;
 		int flags                 = 0;
 		if (w && s.first_person)
@@ -328,6 +329,7 @@ struct FluddWeapons : sms::Mod {
 		optionBool("weapons_defeat", "FLUDD weapons can defeat enemies", true);
 		optionBool("third_person_weapons", "FLUDD weapons in third person too", true);
 		optionBool("third_person_models", "Weapon packs in place of FLUDD in third person", true);
+		optionBool("boss_balance", "Weapons made for bosses (not Shadow Mario)", true);
 		optionBool("normal_defeat", "FLUDD can defeat enemies", true);
 		optionNumber("normal_defeat_time", "FLUDD time to defeat (tenths of a second)", 4, 1, 100, 1);
 		optionChoice("long_range", "Long range (enemies and characters seen and hit further away)",

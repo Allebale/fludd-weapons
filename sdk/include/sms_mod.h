@@ -28,7 +28,7 @@
  * checks a function is there with SMS_API_HAS before calling it. A new major
  * version is an incompatible change; the game refuses mods of another major.
  *
- * Pre-releases: v1.6.0-beta.1, -beta.2, ... lead to v1.6.0. A beta has the
+ * Pre-releases: v1.7.0-beta.1, -beta.2, ... lead to v1.7.0. A beta has the
  * next minor version and SMS_MOD_API_PRERELEASE its number; what a beta added
  * may still change before the release, so a mod built against one is rebuilt
  * against the release (the game warns of a mod built against another beta).
@@ -42,7 +42,7 @@
 #define SMS_MOD_API_MAJOR 1
 #define SMS_MOD_API_MINOR 6
 /* 0 in a release; N in the pre-release vMAJOR.MINOR.0-beta.N (API 1.5) */
-#define SMS_MOD_API_PRERELEASE 2
+#define SMS_MOD_API_PRERELEASE 0
 #define SMS_MOD_API_VERSION ((uint32_t)SMS_MOD_API_MAJOR << 16 | SMS_MOD_API_MINOR)
 
 #if defined(_WIN32)
@@ -1497,7 +1497,22 @@ typedef enum SmsCmdType {
 	   marks it, in i[1]'s colour (0xRRGGBBAA; 0 red). f2[0] seconds: the
 	   edge glides there from where it was (a closing arena). f[3] 0: none.
 	   Kept per session as sticky commands are, when sent sticky. */
-	SMS_CMD_BOUNDS = 26
+	SMS_CMD_BOUNDS = 26,
+	/* API 1.6. The stage's goop, the paint FLUDD cleans: i[0]
+	   SMS_GOOP_*. PAINT: goop over a disc of radius f[3] about f[0..2], in
+	   tint i[1] (0 to SMS_GOOP_TINTS - 1; 0 the stage's own goop), on every
+	   goop surface the stage has under it (seen from above; from the front
+	   for a wall), of the kind the stage's goop is there (sticky, burning,
+	   electric). CLEAN: the disc cleaned, as if FLUDD had (the place back to
+	   tint 0). i[3] SMS_GOOP_AT_HEIGHT: only the surface near f[1], as the
+	   game's own goop and FLUDD's water go. Goop is everyone's, so PAINT and
+	   CLEAN go to every player whatever `to` says, at once (no delay_ms, not
+	   sticky): every game, a newcomer's too, has them in the order they were
+	   sent among the players' cleaning. TINT: tint i[1] drawn in colour i[2]
+	   (0xRRGGBBAA, the alpha how strongly: FF all that colour, 0 the goop's
+	   own), the goop's shading kept; per player, sticky per tint. Stages
+	   without goop surfaces (most courses) have no goop to paint. */
+	SMS_CMD_GOOP = 27
 } SmsCmdType;
 
 #define SMS_CMD_STICKY 1u
@@ -1570,6 +1585,14 @@ typedef enum SmsCmdType {
    bottles (a server's spawned ones too: their look and sparkle without the
    water, which the server gives), fruit and 1-ups, or a barrel's hip drop. */
 #define SMS_RULE_NO_REFILL 32u
+
+/* SMS_CMD_GOOP's i[0] (API 1.6) */
+#define SMS_GOOP_PAINT 0 /* goop over the disc, in tint i[1] */
+#define SMS_GOOP_CLEAN 1 /* the disc cleaned */
+#define SMS_GOOP_TINT  2 /* tint i[1] in colour i[2] (0xRRGGBBAA; 0 the goop's own) */
+#define SMS_GOOP_TINTS 64 /* tints 0 (the stage's own goop) to 63 */
+/* SMS_CMD_GOOP's i[3] bits */
+#define SMS_GOOP_AT_HEIGHT 1u /* only the surface near f[1] (within about 64 units) */
 
 /* SMS_CMD_BOUNDS's i[0] bits (API 1.5) */
 #define SMS_BOUNDS_RING 1u /* draw the edge: a solid line along the ground */
@@ -1819,6 +1842,7 @@ enum { SMS_SPRAY_NORMAL = 0, SMS_SPRAY_SHOTGUN = 1, SMS_SPRAY_RIFLE = 2, SMS_SPR
 #define SMS_ZOOM_SCOPE 2 /* set_zoom's flags: a scope is drawn over the view (a crosshair left out); the game draws it
                           when get_state's game_scope says so */
 #define SMS_SPRAY_THIRD_PERSON_MODEL 16 /* set_weapon's flags: with SMS_SPRAY_THIRD_PERSON, all of FLUDD on his back drawn as a pack of the weapon's colours with the weapon on it */
+#define SMS_SPRAY_BOSSES 32 /* set_weapon's flags: the weapons made for bosses (Proto Piranha's mouth and pile, Petey Piranha filled faster, ...); not Shadow Mario (shadow_damage) */
 
 struct SmsApi {
 	uint32_t size;
