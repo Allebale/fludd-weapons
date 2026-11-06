@@ -187,7 +187,7 @@ struct FluddWeapons : sms::Mod {
 		const int mode = setting("rocket_jump", 2);
 		if (mode != 2)
 			return mode == 1;
-		const int k  = setting("rocket_jump_key", 0);
+		const int k  = setting("rocket_jump_key", 1);
 		const int sc = input().key_from_name(kRocketKeys[k >= 0 && k < kRocketKeyCount ? k : 0]);
 		return sc > 0 && input().key_down(sc);
 	}
@@ -219,8 +219,8 @@ struct FluddWeapons : sms::Mod {
 		rf.range         = 1.0f;
 		rf.to_defeat     = setting("rifle_defeat", 2);
 		rf.water         = setting("rifle_water", 16);
-		rf.hit_size      = (float)setting("rifle_hit", 300) / 100.0f;
-		rf.drop_size     = (float)setting("rifle_blob", 50) / 100.0f;
+		rf.hit_size      = (float)setting("rifle_hit", 450) / 100.0f;
+		rf.drop_size     = (float)setting("rifle_blob", 80) / 100.0f;
 		rf.burst         = 1.0f;
 		rf.view_distance = (float)setting("rifle_distance", 50);
 		rf.far_scale     = far;
@@ -245,14 +245,14 @@ struct FluddWeapons : sms::Mod {
 		SmsSprayStats bz = SmsSprayStats(); // the Bazooka: a burst where it lands
 		bz.size          = sizeof bz;
 		bz.every         = (float)setting("bazooka_rate", 8) / 10.0f;
-		bz.push          = (float)setting("bazooka_push", 150) / 100.0f;
+		bz.push          = (float)setting("bazooka_push", 160) / 100.0f;
 		bz.range         = (float)setting("bazooka_range", 100) / 100.0f;
 		bz.to_defeat     = setting("bazooka_defeat", 3);
 		bz.water         = setting("bazooka_water", 60);
 		bz.hit_size      = 1.0f;
 		bz.drop_size     = 1.0f;
 		bz.burst         = (float)setting("bazooka_burst", 130) / 100.0f;
-		bz.lift          = (float)setting("bazooka_lift", 60) / 100.0f;
+		bz.lift          = (float)setting("bazooka_lift", 40) / 100.0f;
 		bz.self_jump     = rocketJumpOn() ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
 		bz.view_distance = (float)setting("bazooka_distance", 55);
 		bz.far_scale     = far;
@@ -360,8 +360,8 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("rifle_water", "Rifle water per shot", 16, 0, 200, 2);
 		optionNumber("rifle_zoom", "Rifle zoom, D-pad up (field of view)", 25, 5, 60, 5);
 		optionBool("rifle_scope", "Rifle sniper scope while zoomed", true);
-		optionNumber("rifle_hit", "Rifle hit size (percent, how near it must pass an enemy)", 300, 20, 500, 10);
-		optionNumber("rifle_blob", "Rifle blob size (percent)", 50, 20, 400, 10);
+		optionNumber("rifle_hit", "Rifle hit size (percent, how near it must pass an enemy)", 450, 20, 500, 10);
+		optionNumber("rifle_blob", "Rifle blob size (percent)", 80, 20, 400, 10);
 		optionNumber("smg_rate", "Submachine gun fire rate (hundredths of a second)", 14, 1, 100, 1);
 		optionNumber("smg_push", "Submachine gun push (percent, under 100 weaker than FLUDD)", 90, 0, 400, 10);
 		optionNumber("smg_defeat", "Submachine gun shots to defeat", 6, 1, 10, 1);
@@ -369,16 +369,16 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("smg_hit", "Submachine gun hit size (percent)", 100, 20, 500, 10);
 		optionNumber("smg_blob", "Submachine gun blob size (percent)", 20, 20, 400, 10);
 		optionNumber("bazooka_rate", "Bazooka fire rate (tenths of a second)", 8, 1, 200, 1);
-		optionNumber("bazooka_push", "Bazooka push (percent)", 150, 0, 400, 10);
+		optionNumber("bazooka_push", "Bazooka push (percent)", 160, 0, 400, 10);
 		optionNumber("bazooka_range", "Bazooka range (percent)", 100, 10, 100, 10);
 		optionNumber("bazooka_defeat", "Bazooka shots to defeat", 3, 1, 10, 1);
 		optionNumber("bazooka_water", "Bazooka water per shot", 60, 0, 300, 5);
 		optionNumber("bazooka_burst", "Bazooka burst size (percent)", 130, 20, 400, 10);
-		optionNumber("bazooka_lift", "Bazooka air height (percent)", 60, 0, 400, 10);
+		optionNumber("bazooka_lift", "Bazooka air height (percent)", 40, 0, 400, 10);
 		optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
 		optionChoice("rocket_jump_key", "Rocket jump key",
-		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 0);
+		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 1);
 		optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 
 		// the D-pad, once a frame
