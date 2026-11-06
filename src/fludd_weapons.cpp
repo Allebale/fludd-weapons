@@ -52,7 +52,7 @@ const int kShadowCount            = 6;
 // crouch), so shots at enemies close by do not throw Mario
 const char* const kRocketModes[] = {"Off", "Always", "While the key is held"};
 const int kRocketModeCount       = 3;
-const char* const kRocketKeys[]  = {"Left Ctrl", "Left Shift (L)"}; // Left Shift is L: a controller's L too
+const char* const kRocketKeys[]  = {"Left Ctrl", "Left Shift"}; // SDL key names: the keys themselves, whatever they do in the game
 const int kRocketKeyCount        = 2;
 
 } // namespace
@@ -181,17 +181,14 @@ struct FluddWeapons : sms::Mod {
 		info("rifle zoom %s", zoomed ? "on" : "off");
 	}
 
-	// Rocket jumps now: the setting, and with "While the key is held" Left Ctrl, or L (Left Shift)
+	// Rocket jumps now: the setting, and with "While the key is held" the key (Left Ctrl or Left Shift)
 	bool rocketJumpOn() const
 	{
 		const int mode = setting("rocket_jump", 2);
 		if (mode != 2)
 			return mode == 1;
-		if (setting("rocket_jump_key", 0) == 1) {
-			const SmsPad p = pad(0);
-			return (p.held & SMS_PAD_L) || p.trigger_l >= 0.5f;
-		}
-		const int sc = input().key_from_name("Left Ctrl");
+		const int k  = setting("rocket_jump_key", 0);
+		const int sc = input().key_from_name(kRocketKeys[k >= 0 && k < kRocketKeyCount ? k : 0]);
 		return sc > 0 && input().key_down(sc);
 	}
 
