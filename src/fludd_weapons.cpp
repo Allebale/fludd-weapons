@@ -48,6 +48,12 @@ const int kRangeCount       = 6;
 const char* const kShadowLevels[] = {"Very easy", "Easy", "Normal", "Hard", "Very hard", "Extreme"};
 const float kShadowDamage[]       = {2.0f, 1.4f, 1.0f, 0.6f, 0.35f, 0.2f};
 const int kShadowCount            = 6;
+// Rocket jumps: never, always, or only while L or the rocket jump key is held (as Team Fortress 2's
+// crouch), so shots at enemies close by do not throw Mario
+const char* const kRocketModes[] = {"Off", "Always", "While L or the key is held"};
+const int kRocketModeCount       = 3;
+const char* const kRocketKeys[]  = {"Left Ctrl", "Left Alt", "C", "V", "F", "Caps Lock"}; // SDL key names
+const int kRocketKeyCount        = 6;
 
 } // namespace
 
@@ -175,6 +181,20 @@ struct FluddWeapons : sms::Mod {
 		info("rifle zoom %s", zoomed ? "on" : "off");
 	}
 
+	// Rocket jumps now: the setting, and with "While L or the key is held" L (Shift) or the key
+	bool rocketJumpOn() const
+	{
+		const int mode = setting("rocket_jump", 2);
+		if (mode != 2)
+			return mode == 1;
+		const SmsPad p = pad(0);
+		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
+			return true;
+		const int k = setting("rocket_jump_key", 0);
+		const int sc = input().key_from_name(kRocketKeys[k >= 0 && k < kRocketKeyCount ? k : 0]);
+		return sc > 0 && input().key_down(sc);
+	}
+
 	// The weapons' numbers from the menu, to the game.
 	void sendStats(const SmsHeldFluddApi* h)
 	{
@@ -236,7 +256,7 @@ struct FluddWeapons : sms::Mod {
 		bz.drop_size     = 1.0f;
 		bz.burst         = (float)setting("bazooka_burst", 130) / 100.0f;
 		bz.lift          = (float)setting("bazooka_lift", 60) / 100.0f;
-		bz.self_jump     = setting("rocket_jump", 1) ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
+		bz.self_jump     = rocketJumpOn() ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
 		bz.view_distance = (float)setting("bazooka_distance", 55);
 		bz.far_scale     = far;
 		bz.shadow_damage = boss;
@@ -358,7 +378,10 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("bazooka_water", "Bazooka water per shot", 60, 0, 300, 5);
 		optionNumber("bazooka_burst", "Bazooka burst size (percent)", 130, 20, 400, 10);
 		optionNumber("bazooka_lift", "Bazooka air height (percent)", 60, 0, 400, 10);
-		optionBool("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)", true);
+		optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
+		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
+		optionChoice("rocket_jump_key", "Rocket jump key (or hold L)",
+		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 0);
 		optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 
 		// the D-pad, once a frame
