@@ -227,14 +227,14 @@ struct FluddWeapons : sms::Mod {
 
 		SmsSprayStats bz = SmsSprayStats(); // the Bazooka: a burst where it lands
 		bz.size          = sizeof bz;
-		bz.every         = (float)setting("bazooka_rate", 9) / 10.0f;
+		bz.every         = (float)setting("bazooka_rate", 8) / 10.0f;
 		bz.push          = (float)setting("bazooka_push", 150) / 100.0f;
 		bz.range         = (float)setting("bazooka_range", 100) / 100.0f;
 		bz.to_defeat     = setting("bazooka_defeat", 3);
 		bz.water         = setting("bazooka_water", 60);
 		bz.hit_size      = 1.0f;
 		bz.drop_size     = 1.0f;
-		bz.burst         = (float)setting("bazooka_burst", 150) / 100.0f;
+		bz.burst         = (float)setting("bazooka_burst", 130) / 100.0f;
 		bz.lift          = (float)setting("bazooka_lift", 60) / 100.0f;
 		bz.self_jump     = setting("rocket_jump", 1) ? (float)setting("rocket_jump_power", 140) / 100.0f : 0.0f;
 		bz.view_distance = (float)setting("bazooka_distance", 55);
@@ -351,12 +351,12 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("smg_water", "Submachine gun water per shot", 16, 0, 200, 2);
 		optionNumber("smg_hit", "Submachine gun hit size (percent)", 100, 20, 500, 10);
 		optionNumber("smg_blob", "Submachine gun blob size (percent)", 20, 20, 400, 10);
-		optionNumber("bazooka_rate", "Bazooka fire rate (tenths of a second)", 9, 1, 200, 1);
+		optionNumber("bazooka_rate", "Bazooka fire rate (tenths of a second)", 8, 1, 200, 1);
 		optionNumber("bazooka_push", "Bazooka push (percent)", 150, 0, 400, 10);
 		optionNumber("bazooka_range", "Bazooka range (percent)", 100, 10, 100, 10);
 		optionNumber("bazooka_defeat", "Bazooka shots to defeat", 3, 1, 10, 1);
 		optionNumber("bazooka_water", "Bazooka water per shot", 60, 0, 300, 5);
-		optionNumber("bazooka_burst", "Bazooka burst size (percent)", 150, 20, 400, 10);
+		optionNumber("bazooka_burst", "Bazooka burst size (percent)", 130, 20, 400, 10);
 		optionNumber("bazooka_lift", "Bazooka air height (percent)", 60, 0, 400, 10);
 		optionBool("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)", true);
 		optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 140, 10, 300, 10);
