@@ -28,7 +28,7 @@
  * checks a function is there with SMS_API_HAS before calling it. A new major
  * version is an incompatible change; the game refuses mods of another major.
  *
- * Pre-releases: v1.7.0-beta.1, -beta.2, ... lead to v1.7.0. A beta has the
+ * Pre-releases: v1.8.0-beta.1, -beta.2, ... lead to v1.8.0. A beta has the
  * next minor version and SMS_MOD_API_PRERELEASE its number; what a beta added
  * may still change before the release, so a mod built against one is rebuilt
  * against the release (the game warns of a mod built against another beta).
@@ -40,7 +40,7 @@
 #include <stdint.h>
 
 #define SMS_MOD_API_MAJOR 1
-#define SMS_MOD_API_MINOR 6
+#define SMS_MOD_API_MINOR 7
 /* 0 in a release; N in the pre-release vMAJOR.MINOR.0-beta.N (API 1.5) */
 #define SMS_MOD_API_PRERELEASE 0
 #define SMS_MOD_API_VERSION ((uint32_t)SMS_MOD_API_MAJOR << 16 | SMS_MOD_API_MINOR)
@@ -1759,7 +1759,7 @@ typedef struct SmsFilesApi {
 
 /* ------------------------------------------------------------------ FLUDD held in view (first person) */
 
-/* api->held_fludd (SMS_API_HAS(api, held_fludd); check `magic` too): FLUDD
+/* api->held_fludd (API 1.7; SMS_API_HAS(api, held_fludd), check `magic` too): FLUDD
  * drawn in front of the view, held like a gun, for a first-person camera.
  * The game's own FLUDD model, moved each frame to `right`, `down` and
  * `forward` units from the camera (its nozzle's tip there), at `scale` of its
@@ -1842,7 +1842,6 @@ enum { SMS_SPRAY_NORMAL = 0, SMS_SPRAY_SHOTGUN = 1, SMS_SPRAY_RIFLE = 2, SMS_SPR
 #define SMS_ZOOM_SCOPE 2 /* set_zoom's flags: a scope is drawn over the view (a crosshair left out); the game draws it
                           when get_state's game_scope says so */
 #define SMS_SPRAY_THIRD_PERSON_MODEL 16 /* set_weapon's flags: with SMS_SPRAY_THIRD_PERSON, all of FLUDD on his back drawn as a pack of the weapon's colours with the weapon on it */
-#define SMS_SPRAY_BOSSES 32 /* set_weapon's flags: the weapons made for bosses (Proto Piranha's mouth and pile, Petey Piranha filled faster, ...); not Shadow Mario (shadow_damage) */
 
 struct SmsApi {
 	uint32_t size;
@@ -1862,7 +1861,7 @@ struct SmsApi {
 	   of its minor version (check api->size). */
 	uint32_t prerelease;
 	const SmsFilesApi* files;       /* API 1.5 (SMS_API_HAS(api, files)) */
-	const SmsHeldFluddApi* held_fludd; /* first person (SMS_API_HAS(api, held_fludd); check its magic) */
+	const SmsHeldFluddApi* held_fludd; /* API 1.7 (SMS_API_HAS(api, held_fludd); check its magic) */
 };
 
 /* ------------------------------------------------------------------ the mod's side */

@@ -12,6 +12,12 @@
 // weapon's name. It and the First Person mod read each other through held_fludd's get_state.
 #include <sms_mod.hpp>
 
+// The weapons made for bosses (set_weapon's flags): coming in the next game, after SDK 1.7.0;
+// an older game leaves the flag unused
+#ifndef SMS_SPRAY_BOSSES
+#define SMS_SPRAY_BOSSES 32
+#endif
+
 #include <math.h>
 #include <string>
 #include <stddef.h>
