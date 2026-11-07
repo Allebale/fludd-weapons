@@ -24,6 +24,9 @@
 #define SMS_SPRAY_SHOT_WATER 128   // the bazooka's shot seen flying: a streak of water
 #define SMS_SPRAY_SHOT_BALLOON 256 // ...or a green water balloon that pops where it bursts
 #endif
+#ifndef SMS_SPRAY_SHOT_BIG
+#define SMS_SPRAY_SHOT_BIG 512     // ...a big one
+#endif
 
 #include <math.h>
 #include <string>
@@ -67,7 +70,7 @@ const char* const kRocketModes[] = {"Off", "Always", "While the key is held"};
 const int kRocketModeCount       = 3;
 const char* const kRocketKeys[]  = {"Left Ctrl", "Left Shift"}; // SDL key names: the keys themselves, whatever they do in the game
 const int kRocketKeyCount        = 2;
-const char* const kProjectiles[] = {"None", "Water", "Green water balloon"}; // the bazooka's shot seen flying
+const char* const kProjectiles[] = {"Water", "Green water balloon", "Big green water balloon"}; // the bazooka's shot seen flying
 const int kProjectileCount       = 3;
 
 } // namespace
@@ -312,8 +315,8 @@ struct FluddWeapons : sms::Mod {
 		if (flags && w == SMS_SPRAY_BAZOOKA && setting("bazooka_air_forward", 1))
 			flags |= SMS_SPRAY_AIR_FORWARD; // enemies already in the air pushed on forward, not up
 		if (flags && w == SMS_SPRAY_BAZOOKA) { // its shot seen flying
-			const int look = setting("bazooka_projectile", 2);
-			flags |= look == 1 ? SMS_SPRAY_SHOT_WATER : look == 2 ? SMS_SPRAY_SHOT_BALLOON : 0;
+			const int look = setting("bazooka_projectile_look", 1);
+			flags |= look == 0 ? SMS_SPRAY_SHOT_WATER : look == 1 ? SMS_SPRAY_SHOT_BALLOON : SMS_SPRAY_SHOT_BALLOON | SMS_SPRAY_SHOT_BIG;
 		}
 		const int set = w * 1000 + flags;
 		if (w || flags || lastSet > 0) {
@@ -410,8 +413,8 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("bazooka_burst_third", "Bazooka burst size in third person (percent)", 130, 20, 400, 10);
 		optionNumber("bazooka_burst_jump", "Bazooka burst size while rocket jumping (percent)", 130, 20, 400, 10);
 		optionNumber("bazooka_lift", "Bazooka air height (percent)", 40, 0, 400, 10);
-		optionChoice("bazooka_projectile", "Bazooka projectile (Coming Soon)",
-		             std::vector<const char*>(kProjectiles, kProjectiles + kProjectileCount), 2);
+		optionChoice("bazooka_projectile_look", "Bazooka projectile (Coming Soon)",
+		             std::vector<const char*>(kProjectiles, kProjectiles + kProjectileCount), 1);
 		optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up (Coming Soon)", true);
 		optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
@@ -434,10 +437,19 @@ struct FluddWeapons : sms::Mod {
 				return;
 			SmsPadStatus& s = r.pads[0];
 			rHeld           = (s.buttons & SMS_PAD_R) || s.trigger_r >= 60;
-			if (weaponNow() != 0) {
-				s.buttons &= (uint16_t)~SMS_PAD_R;
-				s.trigger_r = 0;
+			if (weaponNow() == 0)
+				return;
+			// R left to the game as FLUDD's own: with the tank empty (its click), and in water with
+			// it not full (it fills up as R is held, as ever); the weapon does not fire then
+			SmsPlayer pl = SmsPlayer();
+			pl.size = sizeof pl;
+			if (player().get(&pl) && pl.has_fludd && !pl.on_yoshi
+			    && (pl.water <= 0 || (pl.in_water && pl.water < pl.max_water))) {
+				rHeld = false;
+				return;
 			}
+			s.buttons &= (uint16_t)~SMS_PAD_R;
+			s.trigger_r = 0;
 		});
 
 		on<SmsEvCamera>(SMS_EV_CAMERA, [this](SmsEvCamera&) { update(); });
