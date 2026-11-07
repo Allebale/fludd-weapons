@@ -17,6 +17,10 @@
 #ifndef SMS_SPRAY_AIR_FORWARD
 #define SMS_SPRAY_AIR_FORWARD 64
 #endif
+#ifndef SMS_SPRAY_SHOT_WATER
+#define SMS_SPRAY_SHOT_WATER 128   // the bazooka's shot seen flying: a streak of water
+#define SMS_SPRAY_SHOT_BALLOON 256 // ...or a green water balloon that pops where it bursts
+#endif
 
 #include <math.h>
 #include <string>
@@ -60,6 +64,8 @@ const char* const kRocketModes[] = {"Off", "Always", "While the key is held"};
 const int kRocketModeCount       = 3;
 const char* const kRocketKeys[]  = {"Left Ctrl", "Left Shift"}; // SDL key names: the keys themselves, whatever they do in the game
 const int kRocketKeyCount        = 2;
+const char* const kProjectiles[] = {"None", "Water", "Green water balloon"}; // the bazooka's shot seen flying
+const int kProjectileCount       = 3;
 
 } // namespace
 
@@ -301,6 +307,10 @@ struct FluddWeapons : sms::Mod {
 			flags = normal;
 		if (flags && w == SMS_SPRAY_BAZOOKA && setting("bazooka_air_forward", 1))
 			flags |= SMS_SPRAY_AIR_FORWARD; // enemies already in the air pushed on forward, not up
+		if (flags && w == SMS_SPRAY_BAZOOKA) { // its shot seen flying
+			const int look = setting("bazooka_projectile", 2);
+			flags |= look == 1 ? SMS_SPRAY_SHOT_WATER : look == 2 ? SMS_SPRAY_SHOT_BALLOON : 0;
+		}
 		const int set = w * 1000 + flags;
 		if (w || flags || lastSet > 0) {
 			h->set_weapon(w, flags);
@@ -395,6 +405,8 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("bazooka_burst_third", "Bazooka burst size in third person (percent)", 130, 20, 400, 10);
 		optionNumber("bazooka_burst_jump", "Bazooka burst size while rocket jumping (percent)", 130, 20, 400, 10);
 		optionNumber("bazooka_lift", "Bazooka air height (percent)", 40, 0, 400, 10);
+		optionChoice("bazooka_projectile", "Bazooka projectile (Coming Soon)",
+		             std::vector<const char*>(kProjectiles, kProjectiles + kProjectileCount), 2);
 		optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up (Coming Soon)", true);
 		optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
