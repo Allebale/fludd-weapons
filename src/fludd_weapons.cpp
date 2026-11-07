@@ -133,10 +133,12 @@ struct FluddWeapons : sms::Mod {
 	}
 
 	// the weapon that fires now: with FLUDD held (or the third person option) and its spray nozzle out
+	bool onCoaster = false; // Pinna Park's roller coaster (Mecha-Bowser's: area 0x3A, stage 0 or 1)
+
 	int weaponNow() const
 	{
-		if (!weaponsHere() || chosen() == SMS_SPRAY_NORMAL || holding())
-			return 0;
+		if (!weaponsHere() || chosen() == SMS_SPRAY_NORMAL || holding() || onCoaster)
+			return 0; // (on Pinna Park's roller coaster: its own rockets, FLUDD's as ever)
 		SmsPlayer m = SmsPlayer();
 		m.size      = sizeof m;
 		if (!api().player->get(&m) || !m.has_fludd || m.on_yoshi || m.current_nozzle != 0)
@@ -479,6 +481,11 @@ struct FluddWeapons : sms::Mod {
 
 		// R: the weapon's while one can fire (no stream, pump or its sound from the game); the game
 		// fires it each time it is ready while R is held
+		on<SmsEvStage>(SMS_EV_STAGE_LOADED, [this](SmsEvStage& e) {
+			onCoaster = e.area == 0x3A && (e.episode == 0 || e.episode == 1);
+			if (onCoaster)
+				info("on the roller coaster: the weapons off (its own rockets)");
+		});
 		on<SmsEvPadRead>(SMS_EV_PAD_READ, [this](SmsEvPadRead& r) {
 			if (!r.pads)
 				return;
