@@ -226,7 +226,10 @@ struct FluddWeapons : sms::Mod {
 		rf.to_defeat     = setting("rifle_defeat", 2);
 		rf.water         = setting("rifle_water", 16);
 		rf.hit_size      = (float)setting("rifle_hit", 450) / 100.0f;
-		rf.drop_size     = (float)setting("rifle_blob", 80) / 100.0f;
+		// its blob's size: zoomed (the scope), else first or third person's
+		const SmsHeldFluddState seen = state();
+		const bool inView  = seen.first_person && seen.held;
+		rf.drop_size     = (float)setting(zoomed && inView ? "rifle_blob_scope" : inView ? "rifle_blob" : "rifle_blob_third", 80) / 100.0f;
 		rf.burst         = 1.0f;
 		rf.view_distance = (float)setting("rifle_distance", 50);
 		rf.far_scale     = far;
@@ -373,7 +376,9 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("rifle_zoom", "Rifle zoom, D-pad up (field of view)", 25, 5, 60, 5);
 		optionBool("rifle_scope", "Rifle sniper scope while zoomed", true);
 		optionNumber("rifle_hit", "Rifle hit size (percent, how near it must pass an enemy)", 450, 20, 500, 10);
-		optionNumber("rifle_blob", "Rifle blob size (percent)", 80, 20, 400, 10);
+		optionNumber("rifle_blob", "Rifle blob size in first person (percent)", 80, 20, 400, 10);
+		optionNumber("rifle_blob_scope", "Rifle blob size while zoomed (percent)", 80, 20, 400, 10);
+		optionNumber("rifle_blob_third", "Rifle blob size in third person (percent)", 80, 20, 400, 10);
 		optionNumber("smg_rate", "Submachine gun fire rate (hundredths of a second)", 14, 1, 100, 1);
 		optionNumber("smg_push", "Submachine gun push (percent, under 100 weaker than FLUDD)", 90, 0, 400, 10);
 		optionNumber("smg_defeat", "Submachine gun shots to defeat", 6, 1, 10, 1);
