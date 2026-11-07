@@ -138,7 +138,8 @@ struct FluddWeapons : sms::Mod {
 			return 0; // (on Pinna Park's roller coaster: its own rockets, FLUDD's as ever)
 		SmsPlayer m = SmsPlayer();
 		m.size      = sizeof m;
-		if (!api().player->get(&m) || !m.has_fludd || m.on_yoshi || m.current_nozzle != 0)
+		// the spray nozzle, or under the sea the underwater one (R fires the weapon there, no jet pack)
+		if (!api().player->get(&m) || !m.has_fludd || m.on_yoshi || (m.current_nozzle != 0 && m.current_nozzle != 2))
 			return 0;
 		return chosen();
 	}
@@ -494,7 +495,7 @@ struct FluddWeapons : sms::Mod {
 			// it not full (it fills up as R is held, as ever); the weapon does not fire then
 			SmsPlayer pl = SmsPlayer();
 			pl.size = sizeof pl;
-			if (player().get(&pl) && pl.has_fludd && !pl.on_yoshi
+			if (player().get(&pl) && pl.has_fludd && !pl.on_yoshi && pl.current_nozzle == 0
 			    && (pl.water <= 0 || (pl.in_water && pl.water < pl.max_water))) {
 				rHeld = false;
 				return;
