@@ -486,6 +486,8 @@ struct FluddWeapons : sms::Mod {
 				return;
 			SmsPadStatus& s = r.pads[0];
 			rHeld           = (s.buttons & SMS_PAD_R) || s.trigger_r >= 60;
+			if (onCoaster && s.trigger_r >= 60)
+				s.buttons |= SMS_PAD_R; // on the roller coaster, R pressed part way (a soft R, a mouse button) fires its rocket too
 			if (weaponNow() == 0)
 				return;
 			// R left to the game as FLUDD's own: with the tank empty (its click), and in water with
