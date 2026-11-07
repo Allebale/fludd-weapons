@@ -10,6 +10,7 @@ A mod for the Super Mario Sunshine PC port: FLUDD fires a Rifle, a Submachine gu
   Submachine gun and Bazooka (a setting, needs the next game update).
 - (Coming Soon) The Bazooka's burst cleans a large area of goop (needs the next game update).
 - (Coming Soon) How much goop each weapon cleans, up to 10 times the game's own (a setting for each).
+- (Coming Soon) The Bazooka's goop area: how far round its burst goop is washed off, apart from its burst size (a setting).
 - (Coming Soon) A Bazooka hit on an enemy already in the air pushes it forward, not up (a setting, needs the next game update).
 - (Coming Soon) The Bazooka's shot seen flying: a streak of water, or a small or big green water balloon that bursts where it lands (a setting).
 - (Coming Soon) Each rocket jump costs Mario 1 health, as in Team Fortress 2 (a setting, on by default).
