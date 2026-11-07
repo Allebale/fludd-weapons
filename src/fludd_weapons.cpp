@@ -257,9 +257,13 @@ struct FluddWeapons : sms::Mod {
 		bz.water         = setting("bazooka_water", 60);
 		bz.hit_size      = 1.0f;
 		bz.drop_size     = 1.0f;
-		bz.burst         = (float)setting("bazooka_burst", 130) / 100.0f;
+		// its burst's size: rocket jumping (first person, rocket jumps on now), else first or third person's
+		const SmsHeldFluddState view = state();
+		const bool held  = view.first_person && view.held;
+		const bool jump  = rocketJumpOn();
+		bz.burst         = (float)setting(held && jump ? "bazooka_burst_jump" : held ? "bazooka_burst" : "bazooka_burst_third", 130) / 100.0f;
 		bz.lift          = (float)setting("bazooka_lift", 40) / 100.0f;
-		bz.self_jump     = rocketJumpOn() ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
+		bz.self_jump     = jump ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
 		bz.view_distance = (float)setting("bazooka_distance", 55);
 		bz.far_scale     = far;
 		bz.shadow_damage = boss;
@@ -381,7 +385,9 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("bazooka_range", "Bazooka range (percent)", 100, 10, 100, 10);
 		optionNumber("bazooka_defeat", "Bazooka shots to defeat", 3, 1, 10, 1);
 		optionNumber("bazooka_water", "Bazooka water per shot", 60, 0, 300, 5);
-		optionNumber("bazooka_burst", "Bazooka burst size (percent)", 130, 20, 400, 10);
+		optionNumber("bazooka_burst", "Bazooka burst size in first person (percent)", 130, 20, 400, 10);
+		optionNumber("bazooka_burst_third", "Bazooka burst size in third person (percent)", 130, 20, 400, 10);
+		optionNumber("bazooka_burst_jump", "Bazooka burst size while rocket jumping (percent)", 130, 20, 400, 10);
 		optionNumber("bazooka_lift", "Bazooka air height (percent)", 40, 0, 400, 10);
 		optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
