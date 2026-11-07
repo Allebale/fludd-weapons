@@ -323,7 +323,7 @@ struct FluddWeapons : sms::Mod {
 			flags |= SMS_SPRAY_AIR_FORWARD; // enemies already in the air pushed on forward, not up
 		if (flags && w == SMS_SPRAY_BAZOOKA && setting("rocket_jump_hurt", 1))
 			flags |= SMS_SPRAY_ROCKET_HURT | (setting("rocket_jump_ouch", 1) ? SMS_SPRAY_ROCKET_OUCH : 0)
-			         | ((setting("rocket_jump_cry_volume", 100) / 5 & 63) << 13); // its volume, in 5 percent steps
+			         | ((setting("rocket_jump_cry_volume", 100) & 127) << 13); // its volume, in percent
 		if (flags && setting("rocket_jump", 2) != 0 && setting("enemy_hearts", 1)) // with rocket jumps on
 			flags |= SMS_SPRAY_HEARTS;
 		if (flags && w == SMS_SPRAY_BAZOOKA) { // its shot seen flying
@@ -434,7 +434,7 @@ struct FluddWeapons : sms::Mod {
 		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 1);
 		optionBool("rocket_jump_hurt", "Rocket jumps cost Mario 1 health (Coming Soon)", true);
 		optionBool("rocket_jump_ouch", "Mario cries out when a rocket jump hurts (Coming Soon)", true);
-		optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent, Coming Soon)", 100, 5, 300, 5);
+		optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent, Coming Soon)", 100, 1, 100, 1);
 		optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on (Coming Soon)", true);
 		optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 
