@@ -129,7 +129,15 @@ struct FluddWeapons : sms::Mod {
 		if (!setting("weapons", 1))
 			return false;
 		const SmsHeldFluddState s = state();
-		return s.first_person ? s.held != 0 : setting("third_person_weapons", 1) != 0;
+		if (!s.first_person)
+			return setting("third_person_weapons", 1) != 0;
+		if (s.held)
+			return true;
+		// under the sea with plain FLUDD (its jet pack) it is on his back, not held: the weapons to
+		// choose from all the same
+		SmsPlayer m = SmsPlayer();
+		m.size      = sizeof m;
+		return api().player->get(&m) && m.has_fludd && !m.on_yoshi && m.current_nozzle == 2;
 	}
 
 	// the weapon that fires now: with FLUDD held (or the third person option) and its spray nozzle out
