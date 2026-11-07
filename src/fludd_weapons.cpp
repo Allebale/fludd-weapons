@@ -360,7 +360,7 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("rifle_water", "Rifle water per shot", 16, 0, 200, 2);
 		optionNumber("rifle_zoom", "Rifle zoom, D-pad up (field of view)", 25, 5, 60, 5);
 		optionBool("rifle_scope", "Rifle sniper scope while zoomed", true);
-		optionNumber("rifle_hit", "Rifle hit size (percent, how near it must pass an enemy)", 450, 20, 500, 10);
+		optionNumber("rifle_hit", "Rifle hit size (percent, how near it must pass an enemy)", 450, 20, 1000, 10);
 		optionNumber("rifle_blob", "Rifle blob size (percent)", 80, 20, 400, 10);
 		optionNumber("smg_rate", "Submachine gun fire rate (hundredths of a second)", 14, 1, 100, 1);
 		optionNumber("smg_push", "Submachine gun push (percent, under 100 weaker than FLUDD)", 90, 0, 400, 10);
