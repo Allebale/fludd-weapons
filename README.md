@@ -11,6 +11,7 @@ A mod for the Super Mario Sunshine PC port: FLUDD fires a Rifle, a Submachine gu
 - (Coming Soon) The Bazooka's burst cleans a large area of goop (needs the next game update).
 - (Coming Soon) A Bazooka hit on an enemy already in the air pushes it forward, not up (a setting, needs the next game update).
 - (Coming Soon) The Bazooka's shot seen flying: a streak of water, or a small or big green water balloon that bursts where it lands (a setting).
+- (Coming Soon) Each rocket jump costs Mario 1 health, as in Team Fortress 2 (a setting, on by default).
 
 Needs a game build with `api->held_fludd` (Chase's beta 2026.11.06 or newer). Works with the
 [First Person mod](https://github.com/Allebale/sms-first-person-mod) for the weapons held in view.
