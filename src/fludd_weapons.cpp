@@ -12,8 +12,11 @@
 // weapon's name. It and the First Person mod read each other through held_fludd's get_state.
 #include <sms_mod.hpp>
 
-// The bazooka pushing enemies already in the air forward (set_weapon's flags): coming in the next
-// game, after SDK 1.7.0; an older game leaves the flag unused
+// The weapons made for bosses and the bazooka pushing enemies in the air forward (set_weapon's
+// flags): coming in the next game, after SDK 1.7.0; an older game leaves the flags unused
+#ifndef SMS_SPRAY_BOSSES
+#define SMS_SPRAY_BOSSES 32
+#endif
 #ifndef SMS_SPRAY_AIR_FORWARD
 #define SMS_SPRAY_AIR_FORWARD 64
 #endif
@@ -326,7 +329,8 @@ struct FluddWeapons : sms::Mod {
 		}
 		const SmsHeldFluddState s = state();
 		const int w               = weaponNow();
-		const int defeat          = (setting("weapons_defeat", 1) ? SMS_SPRAY_DEFEAT : 0) | (rHeld ? 2 : 0);
+		const int defeat          = (setting("weapons_defeat", 1) ? SMS_SPRAY_DEFEAT : 0) | (rHeld ? 2 : 0)
+		                 | (setting("boss_balance", 1) ? SMS_SPRAY_BOSSES : 0);
 		const int normal          = setting("normal_defeat", 1) ? SMS_SPRAY_DEFEAT_NORMAL : 0;
 		int flags                 = 0;
 		if (w && s.first_person)
@@ -412,6 +416,7 @@ struct FluddWeapons : sms::Mod {
 		optionBool("weapons_defeat", "FLUDD weapons can defeat enemies", true);
 		optionBool("third_person_weapons", "FLUDD weapons in third person too", true);
 		optionBool("third_person_models", "Weapon packs in place of FLUDD in third person", true);
+		optionBool("boss_balance", "Weapons made for bosses, not Shadow Mario (Coming Soon)", true);
 		optionBool("normal_defeat", "FLUDD can defeat enemies", true);
 		optionNumber("normal_defeat_time", "FLUDD time to defeat (tenths of a second)", 4, 1, 100, 1);
 		optionChoice("long_range", "Long range (enemies and characters seen and hit further away)",
