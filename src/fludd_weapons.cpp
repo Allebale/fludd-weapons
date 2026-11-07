@@ -204,6 +204,20 @@ struct FluddWeapons : sms::Mod {
 	}
 
 	// Rocket jumps now: the setting, and with "While the key is held" the key (Left Ctrl or Left Shift)
+	// Left Ctrl, Left Shift or a controller's L held: Mario's own voice muted (his rocket jump's cries alone)
+	bool muteKeysHeld() const
+	{
+		const SmsPad p = pad(0);
+		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
+			return true;
+		for (int k = 0; k < kRocketKeyCount; k++) {
+			const int sc = input().key_from_name(kRocketKeys[k]);
+			if (sc > 0 && input().key_down(sc))
+				return true;
+		}
+		return false;
+	}
+
 	bool rocketJumpOn() const
 	{
 		const int mode = setting("rocket_jump", 2);
@@ -267,7 +281,12 @@ struct FluddWeapons : sms::Mod {
 		sm.shadow_damage = boss;
 		h->set_weapon_stats(SMS_SPRAY_SMG, &sm);
 
-		SmsSprayStats bz = SmsSprayStats(); // the Bazooka: a burst where it lands
+		// the Bazooka: a burst where it lands (and the goop area after the SDK 1.7.0 stats: the next
+		// game's goop_area; an older game reads only what it knows)
+		struct BazookaStats : SmsSprayStats {
+			float goop_area;
+		};
+		BazookaStats bz = BazookaStats();
 		bz.size          = sizeof bz;
 		bz.every         = (float)setting("bazooka_rate", 8) / 10.0f;
 		bz.range         = (float)setting("bazooka_range", 100) / 100.0f;
@@ -286,6 +305,7 @@ struct FluddWeapons : sms::Mod {
 		bz.view_distance = (float)setting("bazooka_distance", 55);
 		bz.far_scale     = far;
 		bz.shadow_damage = boss;
+		bz.goop_area     = (float)setting("bazooka_goop_area", 100) / 100.0f;
 		h->set_weapon_stats(SMS_SPRAY_BAZOOKA, &bz);
 	}
 
@@ -327,6 +347,8 @@ struct FluddWeapons : sms::Mod {
 			if (key)
 				flags |= ((setting(key, 100) / 10) & 127) << 20;
 		}
+		if (flags && w == SMS_SPRAY_BAZOOKA && muteKeysHeld())
+			flags |= 1 << 27; // SMS_SPRAY_MUTE_MARIO: his own voice left out while the keys are held
 		if (flags && w == SMS_SPRAY_BAZOOKA) { // its shot seen flying
 			const int look = setting("bazooka_projectile_look", 1);
 			flags |= look == 0 ? SMS_SPRAY_SHOT_WATER : look == 1 ? SMS_SPRAY_SHOT_BALLOON : SMS_SPRAY_SHOT_BALLOON | SMS_SPRAY_SHOT_BIG;
@@ -430,6 +452,7 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("rifle_goop", "Goop the Rifle cleans (percent, Coming Soon)", 100, 100, 1000, 10);
 		optionNumber("smg_goop", "Goop the Submachine gun cleans (percent, Coming Soon)", 100, 100, 1000, 10);
 		optionNumber("bazooka_goop", "Goop the Bazooka cleans (percent, Coming Soon)", 100, 100, 1000, 10);
+		optionNumber("bazooka_goop_area", "Bazooka goop area (percent, Coming Soon)", 100, 10, 1000, 10);
 		optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up (Coming Soon)", true);
 		optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
