@@ -12,6 +12,12 @@
 // weapon's name. It and the First Person mod read each other through held_fludd's get_state.
 #include <sms_mod.hpp>
 
+// The bazooka pushing enemies already in the air forward (set_weapon's flags): coming in the next
+// game, after SDK 1.7.0; an older game leaves the flag unused
+#ifndef SMS_SPRAY_AIR_FORWARD
+#define SMS_SPRAY_AIR_FORWARD 64
+#endif
+
 #include <math.h>
 #include <string>
 #include <stddef.h>
@@ -293,6 +299,8 @@ struct FluddWeapons : sms::Mod {
 			flags = defeat | normal | SMS_SPRAY_THIRD_PERSON | (setting("third_person_models", 1) ? SMS_SPRAY_THIRD_PERSON_MODEL : 0);
 		else if (s.first_person && s.held) // FLUDD's own spray, held in view
 			flags = normal;
+		if (flags && w == SMS_SPRAY_BAZOOKA && setting("bazooka_air_forward", 1))
+			flags |= SMS_SPRAY_AIR_FORWARD; // enemies already in the air pushed on forward, not up
 		const int set = w * 1000 + flags;
 		if (w || flags || lastSet > 0) {
 			h->set_weapon(w, flags);
@@ -386,6 +394,7 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("bazooka_burst_third", "Bazooka burst size in third person (percent)", 130, 20, 400, 10);
 		optionNumber("bazooka_burst_jump", "Bazooka burst size while rocket jumping (percent)", 130, 20, 400, 10);
 		optionNumber("bazooka_lift", "Bazooka air height (percent)", 40, 0, 400, 10);
+		optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up (Coming Soon)", true);
 		optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
 		optionChoice("rocket_jump_key", "Rocket jump key",
