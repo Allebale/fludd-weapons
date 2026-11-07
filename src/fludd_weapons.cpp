@@ -254,7 +254,6 @@ struct FluddWeapons : sms::Mod {
 		SmsSprayStats bz = SmsSprayStats(); // the Bazooka: a burst where it lands
 		bz.size          = sizeof bz;
 		bz.every         = (float)setting("bazooka_rate", 8) / 10.0f;
-		bz.push          = (float)setting("bazooka_push", 160) / 100.0f;
 		bz.range         = (float)setting("bazooka_range", 100) / 100.0f;
 		bz.to_defeat     = setting("bazooka_defeat", 3);
 		bz.water         = setting("bazooka_water", 60);
@@ -265,6 +264,7 @@ struct FluddWeapons : sms::Mod {
 		const bool held  = view.first_person && view.held;
 		const bool jump  = rocketJumpOn();
 		bz.burst         = (float)setting(held && jump ? "bazooka_burst_jump" : held ? "bazooka_burst" : "bazooka_burst_third", 130) / 100.0f;
+		bz.push          = (float)setting(held ? "bazooka_push" : "bazooka_push_third", 160) / 100.0f;
 		bz.lift          = (float)setting("bazooka_lift", 40) / 100.0f;
 		bz.self_jump     = jump ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
 		bz.view_distance = (float)setting("bazooka_distance", 55);
@@ -386,7 +386,8 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("smg_hit", "Submachine gun hit size (percent)", 100, 20, 500, 10);
 		optionNumber("smg_blob", "Submachine gun blob size (percent)", 20, 20, 400, 10);
 		optionNumber("bazooka_rate", "Bazooka fire rate (tenths of a second)", 8, 1, 200, 1);
-		optionNumber("bazooka_push", "Bazooka push (percent)", 160, 0, 400, 10);
+		optionNumber("bazooka_push", "Bazooka push in first person (percent)", 160, 0, 400, 10);
+		optionNumber("bazooka_push_third", "Bazooka push in third person (percent)", 160, 0, 400, 10);
 		optionNumber("bazooka_range", "Bazooka range (percent)", 100, 10, 100, 10);
 		optionNumber("bazooka_defeat", "Bazooka shots to defeat", 3, 1, 10, 1);
 		optionNumber("bazooka_water", "Bazooka water per shot", 60, 0, 300, 5);
