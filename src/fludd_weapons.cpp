@@ -322,6 +322,8 @@ struct FluddWeapons : sms::Mod {
 			         | ((setting("rocket_jump_cry_volume", 100) & 127) << 13); // its volume, in percent
 		if (flags && setting("rocket_jump", 2) != 0 && setting("enemy_hearts", 1)) // with rocket jumps on
 			flags |= SMS_SPRAY_HEARTS;
+		if (flags) // how much goop they clean, in tenths of the game's own
+			flags |= ((setting("goop_cleaning", 100) / 10) & 127) << 20;
 		if (flags && w == SMS_SPRAY_BAZOOKA) { // its shot seen flying
 			const int look = setting("bazooka_projectile_look", 1);
 			flags |= look == 0 ? SMS_SPRAY_SHOT_WATER : look == 1 ? SMS_SPRAY_SHOT_BALLOON : SMS_SPRAY_SHOT_BALLOON | SMS_SPRAY_SHOT_BIG;
@@ -422,6 +424,7 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("bazooka_lift", "Bazooka air height (percent)", 40, 0, 400, 10);
 		optionChoice("bazooka_projectile_look", "Bazooka projectile (Coming Soon)",
 		             std::vector<const char*>(kProjectiles, kProjectiles + kProjectileCount), 1);
+		optionNumber("goop_cleaning", "Goop the weapons clean (percent, Coming Soon)", 100, 100, 1000, 10);
 		optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up (Coming Soon)", true);
 		optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
