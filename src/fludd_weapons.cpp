@@ -119,7 +119,16 @@ struct FluddWeapons : sms::Mod {
 		return s;
 	}
 
-	int chosen() const { return weapon >= 0 && weapon < kWeaponCount ? kWeaponIds[weapon] : SMS_SPRAY_NORMAL; }
+	int chosen() const { return weapon >= 0 && weapon < kWeaponCount && allowed(weapon) ? kWeaponIds[weapon] : SMS_SPRAY_NORMAL; }
+	// a weapon turned off in the menu: not chosen at all (FLUDD always can be)
+	bool allowed(int w) const
+	{
+		if (w <= 0 || w >= kWeaponCount)
+			return true;
+		char key[32];
+		snprintf(key, sizeof key, "weapon_on_%d", w);
+		return setting(key, 1) != 0;
+	}
 
 	// Holding on to something (a fence, a ladder, a bar, a wire, a ceiling's net): no weapon.
 	bool holding() const
@@ -185,13 +194,20 @@ struct FluddWeapons : sms::Mod {
 			const int k  = setting(key, w + 1); // 0 none, 1..9 the keys 1 to 9, 10 the key 0
 			const int sc = k > 0 && k <= 10 ? input().key_from_name(kNumberKeys[k - 1]) : 0;
 			const bool down = sc > 0 && input().key_down(sc);
-			if (down && !numberWasDown[w])
+			if (down && !numberWasDown[w] && allowed(w))
 				byKey = w;
 			numberWasDown[w] = down;
 		}
 		if (!weaponsHere() || (!newRight && !newLeft && byKey < 0))
 			return;
-		weapon = byKey >= 0 ? byKey : (weapon + (newRight ? 1 : kWeaponCount - 1)) % kWeaponCount;
+		if (byKey >= 0)
+			weapon = byKey;
+		else
+			for (int n = 0; n < kWeaponCount; n++) { // the next one on (those turned off skipped)
+				weapon = (weapon + (newRight ? 1 : kWeaponCount - 1)) % kWeaponCount;
+				if (allowed(weapon))
+					break;
+			}
 		if (zoomed && !zoomFromThird)
 			zoomed = false;
 		toast(kWeaponNames[weapon]);
@@ -469,6 +485,12 @@ struct FluddWeapons : sms::Mod {
 	{
 		preset.addRow();
 		preset.optionBool("weapons", "FLUDD weapons, D-pad left and right", true);
+		preset.optionBool("weapon_on_1", "Rifle on", true);
+		preset.optionBool("weapon_on_2", "Submachine gun on", true);
+		preset.optionBool("weapon_on_3", "Bazooka on", true);
+		preset.optionBool("weapon_on_4", "Fire goop on", true);
+		preset.optionBool("weapon_on_5", "Electric goop on", true);
+		preset.optionBool("weapon_on_6", "Black goop on", true);
 		preset.optionChoice("weapon_key_0", "Keyboard key for FLUDD", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 1);
 		preset.optionChoice("weapon_key_1", "Keyboard key for the Rifle", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 2);
 		preset.optionChoice("weapon_key_2", "Keyboard key for the Submachine gun", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 3);
