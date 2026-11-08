@@ -12,25 +12,6 @@
 // weapon's name. It and the First Person mod read each other through held_fludd's get_state.
 #include <sms_mod.hpp>
 
-// The bazooka pushing enemies already in the air forward (set_weapon's flags): coming in the next
-// game, after SDK 1.7.0; an older game leaves the flag unused
-#ifndef SMS_SPRAY_AIR_FORWARD
-#define SMS_SPRAY_AIR_FORWARD 64
-#endif
-#ifndef SMS_SPRAY_SHOT_WATER
-#define SMS_SPRAY_SHOT_WATER 128   // the bazooka's shot seen flying: a streak of water
-#define SMS_SPRAY_SHOT_BALLOON 256 // ...or a green water balloon that pops where it bursts
-#endif
-#ifndef SMS_SPRAY_SHOT_BIG
-#define SMS_SPRAY_SHOT_BIG 512     // ...a big one
-#endif
-#ifndef SMS_SPRAY_ROCKET_HURT
-#define SMS_SPRAY_ROCKET_HURT 1024 // each rocket jump costs Mario a point of health
-#endif
-#ifndef SMS_SPRAY_HEARTS
-#define SMS_SPRAY_HEARTS 2048      // defeated enemies drop a heart (a point of health)
-#define SMS_SPRAY_ROCKET_OUCH 4096 // Mario cries out as a rocket jump hurts him
-#endif
 
 #include <math.h>
 #include <string>
@@ -74,8 +55,6 @@ const char* const kRocketModes[] = {"Off", "Always", "While the key is held"};
 const int kRocketModeCount       = 3;
 const char* const kRocketKeys[]  = {"Left Ctrl", "Left Shift"}; // SDL key names: the keys themselves, whatever they do in the game
 const int kRocketKeyCount        = 2;
-const char* const kProjectiles[] = {"Water", "Green water balloon", "Big green water balloon"}; // the bazooka's shot seen flying
-const int kProjectileCount       = 3;
 
 } // namespace
 
@@ -214,20 +193,6 @@ struct FluddWeapons : sms::Mod {
 	}
 
 	// Rocket jumps now: the setting, and with "While the key is held" the key (Left Ctrl or Left Shift)
-	// Left Ctrl, Left Shift or a controller's L held: Mario's own voice muted (his rocket jump's cries alone)
-	bool muteKeysHeld() const
-	{
-		const SmsPad p = pad(0);
-		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
-			return true;
-		for (int k = 0; k < kRocketKeyCount; k++) {
-			const int sc = input().key_from_name(kRocketKeys[k]);
-			if (sc > 0 && input().key_down(sc))
-				return true;
-		}
-		return false;
-	}
-
 	bool rocketJumpOn() const
 	{
 		const int mode = setting("rocket_jump", 2);
@@ -291,12 +256,7 @@ struct FluddWeapons : sms::Mod {
 		sm.shadow_damage = boss;
 		h->set_weapon_stats(SMS_SPRAY_SMG, &sm);
 
-		// the Bazooka: a burst where it lands (and the goop area after the SDK 1.7.0 stats: the next
-		// game's goop_area; an older game reads only what it knows)
-		struct BazookaStats : SmsSprayStats {
-			float goop_area;
-		};
-		BazookaStats bz = BazookaStats();
+		SmsSprayStats bz = SmsSprayStats(); // the Bazooka: a burst where it lands
 		bz.size          = sizeof bz;
 		bz.every         = (float)setting("bazooka_rate", 8) / 10.0f;
 		bz.range         = (float)setting("bazooka_range", 100) / 100.0f;
@@ -315,7 +275,6 @@ struct FluddWeapons : sms::Mod {
 		bz.view_distance = (float)setting("bazooka_distance", 55);
 		bz.far_scale     = far;
 		bz.shadow_damage = boss;
-		bz.goop_area     = (float)setting("bazooka_goop_area", 100) / 100.0f;
 		h->set_weapon_stats(SMS_SPRAY_BAZOOKA, &bz);
 	}
 
@@ -345,24 +304,6 @@ struct FluddWeapons : sms::Mod {
 			flags = defeat | normal | SMS_SPRAY_THIRD_PERSON | (setting("third_person_models", 1) ? SMS_SPRAY_THIRD_PERSON_MODEL : 0);
 		else if (s.first_person && s.held) // FLUDD's own spray, held in view
 			flags = normal;
-		if (flags && w == SMS_SPRAY_BAZOOKA && setting("bazooka_air_forward", 1))
-			flags |= SMS_SPRAY_AIR_FORWARD; // enemies already in the air pushed on forward, not up
-		if (flags && w == SMS_SPRAY_BAZOOKA && setting("rocket_jump_hurt", 1))
-			flags |= SMS_SPRAY_ROCKET_HURT | (setting("rocket_jump_ouch", 1) ? SMS_SPRAY_ROCKET_OUCH : 0)
-			         | ((setting("rocket_jump_cry_volume", 100) & 127) << 13); // its volume, in percent
-		if (flags && setting("rocket_jump", 2) != 0 && setting("enemy_hearts", 1)) // with rocket jumps on
-			flags |= SMS_SPRAY_HEARTS;
-		if (flags) { // how much goop the chosen one cleans, in tenths of the game's own
-			const char* key = w == SMS_SPRAY_RIFLE ? "rifle_goop" : w == SMS_SPRAY_SMG ? "smg_goop" : w == SMS_SPRAY_BAZOOKA ? "bazooka_goop" : 0;
-			if (key)
-				flags |= ((setting(key, 100) / 10) & 127) << 20;
-		}
-		if (flags && w == SMS_SPRAY_BAZOOKA && muteKeysHeld())
-			flags |= 1 << 27; // SMS_SPRAY_MUTE_MARIO: his own voice left out while the keys are held
-		if (flags && w == SMS_SPRAY_BAZOOKA) { // its shot seen flying
-			const int look = setting("bazooka_projectile_look", 1);
-			flags |= look == 0 ? SMS_SPRAY_SHOT_WATER : look == 1 ? SMS_SPRAY_SHOT_BALLOON : SMS_SPRAY_SHOT_BALLOON | SMS_SPRAY_SHOT_BIG;
-		}
 		const int set = w * 1000 + flags;
 		if (w || flags || lastSet > 0) {
 			h->set_weapon(w, flags);
@@ -457,21 +398,10 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("bazooka_burst_third", "Bazooka burst size in third person (percent)", 130, 20, 400, 10);
 		optionNumber("bazooka_burst_jump", "Bazooka burst size while rocket jumping (percent)", 130, 20, 400, 10);
 		optionNumber("bazooka_lift", "Bazooka air height (percent)", 40, 0, 400, 10);
-		optionChoice("bazooka_projectile_look", "Bazooka projectile",
-		             std::vector<const char*>(kProjectiles, kProjectiles + kProjectileCount), 1);
-		optionNumber("rifle_goop", "Goop the Rifle cleans (percent)", 100, 100, 1000, 10);
-		optionNumber("smg_goop", "Goop the Submachine gun cleans (percent)", 100, 100, 1000, 10);
-		optionNumber("bazooka_goop", "Goop the Bazooka cleans (percent)", 100, 100, 1000, 10);
-		optionNumber("bazooka_goop_area", "Bazooka goop area (percent)", 100, 10, 1000, 10);
-		optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up", true);
 		optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
 		optionChoice("rocket_jump_key", "Rocket jump key",
 		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 1);
-		optionBool("rocket_jump_hurt", "Rocket jumps cost Mario 1 health", true);
-		optionBool("rocket_jump_ouch", "Mario cries out when a rocket jump hurts", true);
-		optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 100, 1, 100, 1);
-		optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 
 		// the D-pad, once a frame

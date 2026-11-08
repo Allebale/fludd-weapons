@@ -6,23 +6,13 @@ A mod for the Super Mario Sunshine PC port: FLUDD fires a Rifle, a Submachine gu
 - D-pad up zooms the Rifle, with a sniper scope.
 - The Bazooka's burst throws enemies and fruit, and rocket jumps you in first person while you hold Left Ctrl or Left Shift, as Team Fortress 2's crouch (or always, or never, in the settings).
 - Long range, Shadow Mario difficulty and every weapon's numbers are in the mod's settings.
-- Weapons made for bosses (a setting): Proto Piranha, Petey Piranha, Big Chain Chomp, Phantamanta
-  and Eely-Mouth's teeth take a set number of Rifle, Submachine gun and Bazooka shots.
-- The Rifle aims itself at the enemy nearest the middle of the view.
-- The Bazooka's burst cleans a large area of goop; how much goop each weapon cleans, and the
-  Bazooka's goop area, are settings.
-- Friendly characters covered in goop wash clean in 1 Bazooka shot, 2 Rifle shots or 42 Submachine
-  gun shots.
-- A Bazooka hit on an enemy already in the air pushes it forward, not up (a setting).
-- The Bazooka's shot seen flying: a streak of water, or a small or big green water balloon that
-  bursts where it lands (a setting).
-- Each rocket jump costs Mario 1 health, as in Team Fortress 2, and he cries out (settings, on by
-  default). With rocket jumps on, an enemy the Bazooka defeats drops a heart beside its coin: 1
-  health back.
+- The Bazooka's burst size and push, and the Rifle's blob size, each their own in first and third
+  person (and while rocket jumping or zoomed).
+- With the tank empty R gives FLUDD's click; in water R fills it up.
 - Weapons off on Pinna Park's roller coaster (its own rockets); FLUDD's jet pack under the sea.
 
-The newest features (bosses, goop, the Bazooka's shot, hearts, rocket jump health) need a game
-build newer than Chase's beta 2026.11.06; on that one the rest works.
+More (weapons made for bosses, the Bazooka's shot seen flying, hearts, rocket jump health, goop)
+comes with the next game update.
 
 Needs a game build with `api->held_fludd` (Chase's beta 2026.11.06 or newer). Works with the
 [First Person mod](https://github.com/Allebale/sms-first-person-mod) for the weapons held in view.
