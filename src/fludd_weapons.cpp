@@ -61,6 +61,9 @@ const char* const kWeaponNames[] = {"FLUDD", "Rifle", "Submachine gun", "Bazooka
 const int kWeaponIds[]           = {SMS_SPRAY_NORMAL, SMS_SPRAY_RIFLE, SMS_SPRAY_SMG, SMS_SPRAY_BAZOOKA, SMS_SPRAY_FIRE_GOOP,
                                     SMS_SPRAY_ELECTRIC_GOOP};
 const int kWeaponCount           = 6;
+// the keyboard keys a weapon can be chosen with (the menu's choices after None)
+const char* const kNumberKeys[]   = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
+const char* const kKeyChoices[]   = {"None", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
 // the goop weapons: FLUDD's own stream, as fire or electric goop (R left to the game)
 bool isGoop(int w) { return w == SMS_SPRAY_FIRE_GOOP || w == SMS_SPRAY_ELECTRIC_GOOP; }
 
@@ -92,6 +95,7 @@ struct FluddWeapons : sms::Mod {
 	RecommendedPreset preset{*this}; // the "Settings preset" row: Recommended (the defaults) or Custom
 
 	int weapon    = 0;     // the weapon chosen (kWeaponNames)
+	bool numberWasDown[kWeaponCount] = {};
 	bool rHeld    = false; // R, as the controller has it (kept from the game while a weapon fires)
 	bool zoomed   = false; // the Rifle's zoom
 	bool zoomFromThird = false; // zoomed from third person (into first person for it)
@@ -173,9 +177,21 @@ struct FluddWeapons : sms::Mod {
 		const bool newRight = right && !rightWasDown, newLeft = left && !leftWasDown;
 		rightWasDown = right;
 		leftWasDown  = left;
-		if (!weaponsHere() || (!newRight && !newLeft))
+		// or a number key: each weapon's own (the menu's), as it goes down
+		int byKey = -1;
+		for (int w = 0; w < kWeaponCount; w++) {
+			char key[32];
+			snprintf(key, sizeof key, "weapon_key_%d", w);
+			const int k  = setting(key, w + 1); // 0 none, 1..9 the keys 1 to 9, 10 the key 0
+			const int sc = k > 0 && k <= 10 ? input().key_from_name(kNumberKeys[k - 1]) : 0;
+			const bool down = sc > 0 && input().key_down(sc);
+			if (down && !numberWasDown[w])
+				byKey = w;
+			numberWasDown[w] = down;
+		}
+		if (!weaponsHere() || (!newRight && !newLeft && byKey < 0))
 			return;
-		weapon = (weapon + (newRight ? 1 : kWeaponCount - 1)) % kWeaponCount;
+		weapon = byKey >= 0 ? byKey : (weapon + (newRight ? 1 : kWeaponCount - 1)) % kWeaponCount;
 		if (zoomed && !zoomFromThird)
 			zoomed = false;
 		toast(kWeaponNames[weapon]);
@@ -453,6 +469,12 @@ struct FluddWeapons : sms::Mod {
 	{
 		preset.addRow();
 		preset.optionBool("weapons", "FLUDD weapons, D-pad left and right", true);
+		preset.optionChoice("weapon_key_0", "Keyboard key for FLUDD", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 1);
+		preset.optionChoice("weapon_key_1", "Keyboard key for the Rifle", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 2);
+		preset.optionChoice("weapon_key_2", "Keyboard key for the Submachine gun", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 3);
+		preset.optionChoice("weapon_key_3", "Keyboard key for the Bazooka", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 4);
+		preset.optionChoice("weapon_key_4", "Keyboard key for Fire goop", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 5);
+		preset.optionChoice("weapon_key_5", "Keyboard key for Electric goop", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 6);
 		preset.optionBool("weapons_defeat", "FLUDD weapons can defeat enemies", true);
 		preset.optionBool("third_person_weapons", "FLUDD weapons in third person too", true);
 		preset.optionBool("third_person_models", "Weapon packs in place of FLUDD in third person", true);
