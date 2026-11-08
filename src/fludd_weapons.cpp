@@ -462,21 +462,21 @@ struct FluddWeapons : sms::Mod {
 		optionNumber("bazooka_burst_third", "Bazooka burst size in third person (percent)", 130, 20, 400, 10);
 		optionNumber("bazooka_burst_jump", "Bazooka burst size while rocket jumping (percent)", 130, 20, 400, 10);
 		optionNumber("bazooka_lift", "Bazooka air height (percent)", 40, 0, 400, 10);
-		optionChoice("bazooka_projectile_look", "Bazooka projectile (Coming Soon)",
+		optionChoice("bazooka_projectile_look", "Bazooka projectile",
 		             std::vector<const char*>(kProjectiles, kProjectiles + kProjectileCount), 1);
-		optionNumber("rifle_goop", "Goop the Rifle cleans (percent, Coming Soon)", 100, 100, 1000, 10);
-		optionNumber("smg_goop", "Goop the Submachine gun cleans (percent, Coming Soon)", 100, 100, 1000, 10);
-		optionNumber("bazooka_goop", "Goop the Bazooka cleans (percent, Coming Soon)", 100, 100, 1000, 10);
-		optionNumber("bazooka_goop_area", "Bazooka goop area (percent, Coming Soon)", 100, 10, 1000, 10);
-		optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up (Coming Soon)", true);
+		optionNumber("rifle_goop", "Goop the Rifle cleans (percent)", 100, 100, 1000, 10);
+		optionNumber("smg_goop", "Goop the Submachine gun cleans (percent)", 100, 100, 1000, 10);
+		optionNumber("bazooka_goop", "Goop the Bazooka cleans (percent)", 100, 100, 1000, 10);
+		optionNumber("bazooka_goop_area", "Bazooka goop area (percent)", 100, 10, 1000, 10);
+		optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up", true);
 		optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
 		optionChoice("rocket_jump_key", "Rocket jump key",
 		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 1);
-		optionBool("rocket_jump_hurt", "Rocket jumps cost Mario 1 health (Coming Soon)", true);
-		optionBool("rocket_jump_ouch", "Mario cries out when a rocket jump hurts (Coming Soon)", true);
-		optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent, Coming Soon)", 100, 1, 100, 1);
-		optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on (Coming Soon)", true);
+		optionBool("rocket_jump_hurt", "Rocket jumps cost Mario 1 health", true);
+		optionBool("rocket_jump_ouch", "Mario cries out when a rocket jump hurts", true);
+		optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 100, 1, 100, 1);
+		optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 
 		// the D-pad, once a frame
