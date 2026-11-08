@@ -332,7 +332,7 @@ struct FluddWeapons : sms::Mod {
 			std::string key(pre);
 			SmsSprayStats gs = SmsSprayStats();
 			gs.size          = sizeof gs;
-			gs.every         = (float)setting((key + "_defeat").c_str(), g ? 6 : 10) / 10.0f;
+			gs.every         = (float)setting((key + "_defeat").c_str(), g ? 12 : 15) / 10.0f;
 			gs.range         = (float)setting((key + "_life").c_str(), 60) / 60.0f;
 			gs.burst         = (float)setting((key + "_size").c_str(), 100) / 100.0f;
 			gs.push          = 1.0f;
@@ -501,10 +501,10 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 40, 1, 100, 1);
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
-		preset.optionNumber("fire_goop_defeat", "Fire goop time to defeat an enemy (tenths of a second)", 10, 1, 100, 1);
+		preset.optionNumber("fire_goop_defeat", "Fire goop burning time before an enemy is defeated (tenths of a second)", 15, 1, 100, 1);
 		preset.optionNumber("fire_goop_life", "Fire goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("fire_goop_size", "Fire goop puddle size (percent)", 100, 20, 300, 10);
-		preset.optionNumber("electric_goop_defeat", "Electric goop time to defeat an enemy (tenths of a second)", 6, 1, 100, 1);
+		preset.optionNumber("electric_goop_defeat", "Electric goop shock time before an enemy is defeated (tenths of a second)", 12, 1, 100, 1);
 		preset.optionNumber("electric_goop_life", "Electric goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("electric_goop_size", "Electric goop puddle size (percent)", 100, 20, 300, 10);
 		preset.check();
