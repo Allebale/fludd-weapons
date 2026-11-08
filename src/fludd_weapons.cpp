@@ -340,6 +340,7 @@ struct FluddWeapons : sms::Mod {
 			gs.hit_size      = (float)setting("goop_wall_life", 30) / 60.0f; // its goop on walls' minutes
 			gs.lift          = 1.0f;
 			gs.drop_size     = 1.0f;
+			gs.water         = setting((key + "_water").c_str(), 100); // percent of FLUDD's own
 			h->set_weapon_stats(g ? SMS_SPRAY_ELECTRIC_GOOP : SMS_SPRAY_FIRE_GOOP, &gs);
 		}
 	}
@@ -509,10 +510,12 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 		preset.optionNumber("fire_goop_defeat", "Fire goop burning time before an enemy is defeated (tenths of a second)", 15, 1, 100, 1);
 		preset.optionNumber("fire_goop_hits", "Fire goop burns before an enemy is defeated", 1, 1, 20, 1);
+		preset.optionNumber("fire_goop_water", "Fire goop water use (percent of FLUDD's)", 100, 10, 500, 10);
 		preset.optionNumber("fire_goop_life", "Fire goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("fire_goop_size", "Fire goop puddle size (percent)", 100, 20, 300, 10);
 		preset.optionNumber("electric_goop_defeat", "Electric goop shock time before an enemy is defeated (tenths of a second)", 12, 1, 100, 1);
 		preset.optionNumber("electric_goop_hits", "Electric goop shocks before an enemy is defeated", 1, 1, 20, 1);
+		preset.optionNumber("electric_goop_water", "Electric goop water use (percent of FLUDD's)", 100, 10, 500, 10);
 		preset.optionNumber("electric_goop_life", "Electric goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("electric_goop_size", "Electric goop puddle size (percent)", 100, 20, 300, 10);
 		preset.optionBool("goop_walls", "Goop sticks to walls and drips down", true);
