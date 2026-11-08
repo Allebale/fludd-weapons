@@ -1842,7 +1842,8 @@ enum { SMS_SPRAY_NORMAL = 0, SMS_SPRAY_SHOTGUN = 1, SMS_SPRAY_RIFLE = 2, SMS_SPR
    left alone it lasts `range` minutes. `burst` sizes its puddles and `drop_size` its stream's blobs
    (times their own). The mod leaves R to the game with one chosen (it is FLUDD's own stream).
    A game without them takes either as the normal spray. */
-enum { SMS_SPRAY_FIRE_GOOP = 5, SMS_SPRAY_ELECTRIC_GOOP = 6 };
+/* SMS_SPRAY_BLACK_GOOP: slippery black goop, no harm: Mario runs faster through it (set_weapon_stats' push: how much) and slides keep their speed. */
+enum { SMS_SPRAY_FIRE_GOOP = 5, SMS_SPRAY_ELECTRIC_GOOP = 6, SMS_SPRAY_BLACK_GOOP = 7 };
 #define SMS_SPRAY_DEFEAT 1 /* set_weapon's flags: a weapon may defeat enemies */
 #define SMS_SPRAY_DEFEAT_NORMAL 4 /* set_weapon's flags: the normal spray may defeat enemies too (a short burst on one) */
 #define SMS_SPRAY_THIRD_PERSON 8 /* set_weapon's flags: the weapon fires with FLUDD on his back too (not held in view): from its nozzle, the way he faces, its nozzle out and pumping as it fires */

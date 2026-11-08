@@ -57,15 +57,15 @@ const SmsHeldFluddApi* heldFluddApi(const SmsApi& api)
 bool has(const SmsHeldFluddApi* h, size_t end) { return h && h->size >= end; }
 #define HELD_HAS(h, field) has(h, offsetof(SmsHeldFluddApi, field) + sizeof(void*))
 
-const char* const kWeaponNames[] = {"FLUDD", "Rifle", "Submachine gun", "Bazooka", "Fire goop", "Electric goop"};
+const char* const kWeaponNames[] = {"FLUDD", "Rifle", "Submachine gun", "Bazooka", "Fire goop", "Electric goop", "Black goop"};
 const int kWeaponIds[]           = {SMS_SPRAY_NORMAL, SMS_SPRAY_RIFLE, SMS_SPRAY_SMG, SMS_SPRAY_BAZOOKA, SMS_SPRAY_FIRE_GOOP,
-                                    SMS_SPRAY_ELECTRIC_GOOP};
-const int kWeaponCount           = 6;
+                                    SMS_SPRAY_ELECTRIC_GOOP, SMS_SPRAY_BLACK_GOOP};
+const int kWeaponCount           = 7;
 // the keyboard keys a weapon can be chosen with (the menu's choices after None)
 const char* const kNumberKeys[]   = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
 const char* const kKeyChoices[]   = {"None", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
 // the goop weapons: FLUDD's own stream, as fire or electric goop (R left to the game)
-bool isGoop(int w) { return w == SMS_SPRAY_FIRE_GOOP || w == SMS_SPRAY_ELECTRIC_GOOP; }
+bool isGoop(int w) { return w == SMS_SPRAY_FIRE_GOOP || w == SMS_SPRAY_ELECTRIC_GOOP || w == SMS_SPRAY_BLACK_GOOP; }
 
 // long range: how much further than the game's own distance enemies and characters are drawn and
 // move (the "long_range" setting)
@@ -343,21 +343,21 @@ struct FluddWeapons : sms::Mod {
 		bz.goop_area     = (float)setting("bazooka_goop_area", 400) / 100.0f;
 		h->set_weapon_stats(SMS_SPRAY_BAZOOKA, &bz);
 		// the goop weapons: seconds to defeat an enemy, how long the goop lasts (in minutes), its puddles' size
-		for (int g = 0; g < 2; g++) {
-			const char* const pre = g ? "electric_goop" : "fire_goop";
+		for (int g = 0; g < 3; g++) {
+			const char* const pre = g == 2 ? "black_goop" : g ? "electric_goop" : "fire_goop";
 			std::string key(pre);
 			SmsSprayStats gs = SmsSprayStats();
 			gs.size          = sizeof gs;
 			gs.every         = (float)setting((key + "_defeat").c_str(), g ? 12 : 15) / 10.0f;
 			gs.range         = (float)setting((key + "_life").c_str(), 60) / 60.0f;
 			gs.burst         = (float)setting((key + "_size").c_str(), 100) / 100.0f;
-			gs.push          = 1.0f;
+			gs.push          = g == 2 ? (float)setting("black_goop_speed", 100) / 100.0f : 1.0f; // black goop: how fast
 			gs.to_defeat     = setting((key + "_hits").c_str(), 1);
 			gs.hit_size      = (float)setting("goop_wall_life", 30) / 60.0f; // its goop on walls' minutes
 			gs.lift          = 1.0f;
 			gs.drop_size     = 1.0f;
 			gs.water         = setting((key + "_water").c_str(), 100); // percent of FLUDD's own
-			h->set_weapon_stats(g ? SMS_SPRAY_ELECTRIC_GOOP : SMS_SPRAY_FIRE_GOOP, &gs);
+			h->set_weapon_stats(g == 2 ? SMS_SPRAY_BLACK_GOOP : g ? SMS_SPRAY_ELECTRIC_GOOP : SMS_SPRAY_FIRE_GOOP, &gs);
 		}
 	}
 
@@ -475,6 +475,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionChoice("weapon_key_3", "Keyboard key for the Bazooka", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 4);
 		preset.optionChoice("weapon_key_4", "Keyboard key for Fire goop", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 5);
 		preset.optionChoice("weapon_key_5", "Keyboard key for Electric goop", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 6);
+		preset.optionChoice("weapon_key_6", "Keyboard key for Black goop", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 7);
 		preset.optionBool("weapons_defeat", "FLUDD weapons can defeat enemies", true);
 		preset.optionBool("third_person_weapons", "FLUDD weapons in third person too", true);
 		preset.optionBool("third_person_models", "Weapon packs in place of FLUDD in third person", true);
@@ -532,14 +533,18 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 		preset.optionNumber("fire_goop_defeat", "Fire goop burning time before an enemy is defeated (tenths of a second)", 15, 1, 100, 1);
 		preset.optionNumber("fire_goop_hits", "Fire goop burns before an enemy is defeated", 1, 1, 20, 1);
-		preset.optionNumber("fire_goop_water", "Fire goop water use (percent of FLUDD's)", 100, 10, 500, 10);
+		preset.optionNumber("fire_goop_water", "Fire goop water use (percent of FLUDD's)", 100, 10, 1000, 10);
 		preset.optionNumber("fire_goop_life", "Fire goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("fire_goop_size", "Fire goop puddle size (percent)", 100, 20, 300, 10);
 		preset.optionNumber("electric_goop_defeat", "Electric goop shock time before an enemy is defeated (tenths of a second)", 12, 1, 100, 1);
 		preset.optionNumber("electric_goop_hits", "Electric goop shocks before an enemy is defeated", 1, 1, 20, 1);
-		preset.optionNumber("electric_goop_water", "Electric goop water use (percent of FLUDD's)", 100, 10, 500, 10);
+		preset.optionNumber("electric_goop_water", "Electric goop water use (percent of FLUDD's)", 100, 10, 1000, 10);
 		preset.optionNumber("electric_goop_life", "Electric goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("electric_goop_size", "Electric goop puddle size (percent)", 100, 20, 300, 10);
+		preset.optionNumber("black_goop_speed", "Black goop speed (percent)", 100, 50, 300, 10);
+		preset.optionNumber("black_goop_water", "Black goop water use (percent of FLUDD's)", 100, 10, 1000, 10);
+		preset.optionNumber("black_goop_life", "Black goop lasts (seconds)", 60, 5, 600, 5);
+		preset.optionNumber("black_goop_size", "Black goop puddle size (percent)", 100, 20, 300, 10);
 		preset.optionBool("goop_walls", "Goop sticks to walls and drips down", true);
 		preset.optionNumber("goop_wall_life", "Goop on walls lasts (seconds)", 30, 5, 300, 5);
 		preset.optionBool("goop_grass_press", "Electric goop presses the grass down (Remastered builds)", true);
