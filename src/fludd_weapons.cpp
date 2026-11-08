@@ -337,7 +337,7 @@ struct FluddWeapons : sms::Mod {
 			gs.burst         = (float)setting((key + "_size").c_str(), 100) / 100.0f;
 			gs.push          = 1.0f;
 			gs.to_defeat     = setting((key + "_hits").c_str(), 1);
-			gs.hit_size      = 1.0f;
+			gs.hit_size      = (float)setting("goop_wall_life", 30) / 60.0f; // its goop on walls' minutes
 			gs.lift          = 1.0f;
 			gs.drop_size     = 1.0f;
 			h->set_weapon_stats(g ? SMS_SPRAY_ELECTRIC_GOOP : SMS_SPRAY_FIRE_GOOP, &gs);
@@ -393,6 +393,8 @@ struct FluddWeapons : sms::Mod {
 			flags |= 1 << 28; // electric goop leaves the grass standing
 		if (flags && !setting("goop_grass_burn", 1))
 			flags |= 1 << 29; // fire goop leaves the grass unburnt
+		if (flags && !setting("goop_walls", 1))
+			flags |= 1 << 30; // goop off walls
 		const int set = w * 1000 + flags;
 		if (w || flags || lastSet > 0) {
 			h->set_weapon(w, flags);
@@ -513,6 +515,8 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("electric_goop_hits", "Electric goop shocks before an enemy is defeated", 1, 1, 20, 1);
 		preset.optionNumber("electric_goop_life", "Electric goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("electric_goop_size", "Electric goop puddle size (percent)", 100, 20, 300, 10);
+		preset.optionBool("goop_walls", "Goop sticks to walls and drips down", true);
+		preset.optionNumber("goop_wall_life", "Goop on walls lasts (seconds)", 30, 5, 300, 5);
 		preset.optionBool("goop_grass_press", "Electric goop presses the grass down (Remastered builds)", true);
 		preset.optionBool("goop_grass_burn", "Fire goop burns the grass away (Remastered builds)", true);
 		preset.check();
