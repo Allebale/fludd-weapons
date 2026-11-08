@@ -389,6 +389,10 @@ struct FluddWeapons : sms::Mod {
 			const int look = setting("bazooka_projectile_look", 2);
 			flags |= look == 0 ? SMS_SPRAY_SHOT_WATER : look == 1 ? SMS_SPRAY_SHOT_BALLOON : SMS_SPRAY_SHOT_BALLOON | SMS_SPRAY_SHOT_BIG;
 		}
+		if (flags && !setting("goop_grass_press", 1))
+			flags |= 1 << 28; // electric goop leaves the grass standing
+		if (flags && !setting("goop_grass_burn", 1))
+			flags |= 1 << 29; // fire goop leaves the grass unburnt
 		const int set = w * 1000 + flags;
 		if (w || flags || lastSet > 0) {
 			h->set_weapon(w, flags);
@@ -507,6 +511,8 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("electric_goop_defeat", "Electric goop shock time before an enemy is defeated (tenths of a second)", 12, 1, 100, 1);
 		preset.optionNumber("electric_goop_life", "Electric goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("electric_goop_size", "Electric goop puddle size (percent)", 100, 20, 300, 10);
+		preset.optionBool("goop_grass_press", "Electric goop presses the grass down (Remastered builds)", true);
+		preset.optionBool("goop_grass_burn", "Fire goop burns the grass away (Remastered builds)", true);
 		preset.check();
 
 		// the D-pad, once a frame
