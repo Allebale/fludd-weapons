@@ -367,7 +367,7 @@ struct FluddWeapons : sms::Mod {
 			gs.every         = (float)setting((key + "_defeat").c_str(), g ? 12 : 15) / 10.0f;
 			gs.range         = (float)setting((key + "_life").c_str(), 60) / 60.0f;
 			gs.burst         = (float)setting((key + "_size").c_str(), 100) / 100.0f;
-			gs.push          = g == 2 ? (float)setting("black_goop_speed", 100) / 100.0f : 1.0f; // black goop: how fast
+			gs.push          = g == 2 ? (float)setting("black_goop_speed", 200) / 100.0f : 1.0f; // black goop: how fast
 			gs.to_defeat     = setting((key + "_hits").c_str(), 1);
 			gs.hit_size      = (float)setting("goop_wall_life", 30) / 60.0f; // its goop on walls' minutes
 			gs.lift          = 1.0f;
@@ -563,7 +563,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("electric_goop_water", "Electric goop water use (percent of FLUDD's)", 100, 10, 1000, 10);
 		preset.optionNumber("electric_goop_life", "Electric goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("electric_goop_size", "Electric goop puddle size (percent)", 100, 20, 300, 10);
-		preset.optionNumber("black_goop_speed", "Black goop speed (percent)", 100, 50, 300, 10);
+		preset.optionNumber("black_goop_speed", "Black goop speed (percent)", 200, 50, 1000, 10);
 		preset.optionNumber("black_goop_water", "Black goop water use (percent of FLUDD's)", 100, 10, 1000, 10);
 		preset.optionNumber("black_goop_life", "Black goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("black_goop_size", "Black goop puddle size (percent)", 100, 20, 300, 10);
