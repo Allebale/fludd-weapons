@@ -11,6 +11,7 @@
 // chooses, keeps R from the game's own spray while a weapon fires, and draws the scope and the
 // weapon's name. It and the First Person mod read each other through held_fludd's get_state.
 #include <sms_mod.hpp>
+#include "recommended_preset.h"
 
 // The weapons made for bosses and the bazooka pushing enemies in the air forward (set_weapon's
 // flags): coming in the next game, after SDK 1.7.0; an older game leaves the flags unused
@@ -84,6 +85,8 @@ const int kProjectileCount       = 3;
 
 struct FluddWeapons : sms::Mod {
 	using sms::Mod::Mod;
+
+	RecommendedPreset preset{*this}; // the "Settings preset" row: Recommended (the defaults) or Custom
 
 	int weapon    = 0;     // the weapon chosen (kWeaponNames)
 	bool rHeld    = false; // R, as the controller has it (kept from the game while a weapon fires)
@@ -268,11 +271,11 @@ struct FluddWeapons : sms::Mod {
 		rf.range         = 1.0f;
 		rf.to_defeat     = setting("rifle_defeat", 2);
 		rf.water         = setting("rifle_water", 16);
-		rf.hit_size      = (float)setting("rifle_hit", 450) / 100.0f;
+		rf.hit_size      = (float)setting("rifle_hit", 100) / 100.0f;
 		// its blob's size: zoomed (the scope), else first or third person's
 		const SmsHeldFluddState seen = state();
 		const bool inView  = seen.first_person && seen.held;
-		rf.drop_size     = (float)setting(zoomed && inView ? "rifle_blob_scope" : inView ? "rifle_blob" : "rifle_blob_third", 80) / 100.0f;
+		rf.drop_size     = (float)setting(zoomed && inView ? "rifle_blob_scope" : inView ? "rifle_blob" : "rifle_blob_third", zoomed && inView ? 20 : 80) / 100.0f;
 		rf.burst         = 1.0f;
 		rf.view_distance = (float)setting("rifle_distance", 50);
 		rf.far_scale     = far;
@@ -311,14 +314,14 @@ struct FluddWeapons : sms::Mod {
 		const SmsHeldFluddState view = state();
 		const bool held  = view.first_person && view.held;
 		const bool jump  = rocketJumpOn();
-		bz.burst         = (float)setting(held && jump ? "bazooka_burst_jump" : held ? "bazooka_burst" : "bazooka_burst_third", 130) / 100.0f;
-		bz.push          = (float)setting(held ? "bazooka_push" : "bazooka_push_third", 160) / 100.0f;
+		bz.burst         = (float)setting(held && jump ? "bazooka_burst_jump" : held ? "bazooka_burst" : "bazooka_burst_third", held ? 130 : 250) / 100.0f;
+		bz.push          = (float)setting(held ? "bazooka_push" : "bazooka_push_third", held ? 170 : 200) / 100.0f;
 		bz.lift          = (float)setting("bazooka_lift", 40) / 100.0f;
 		bz.self_jump     = jump ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
 		bz.view_distance = (float)setting("bazooka_distance", 55);
 		bz.far_scale     = far;
 		bz.shadow_damage = boss;
-		bz.goop_area     = (float)setting("bazooka_goop_area", 100) / 100.0f;
+		bz.goop_area     = (float)setting("bazooka_goop_area", 400) / 100.0f;
 		h->set_weapon_stats(SMS_SPRAY_BAZOOKA, &bz);
 	}
 
@@ -341,7 +344,7 @@ struct FluddWeapons : sms::Mod {
 		const int w               = weaponNow();
 		const int defeat          = (setting("weapons_defeat", 1) ? SMS_SPRAY_DEFEAT : 0) | (rHeld ? 2 : 0)
 		                 | (setting("boss_balance", 1) ? SMS_SPRAY_BOSSES : 0);
-		const int normal          = setting("normal_defeat", 1) ? SMS_SPRAY_DEFEAT_NORMAL : 0;
+		const int normal          = setting("normal_defeat", 0) ? SMS_SPRAY_DEFEAT_NORMAL : 0;
 		int flags                 = 0;
 		if (w && s.first_person)
 			flags = defeat | normal;
@@ -353,18 +356,18 @@ struct FluddWeapons : sms::Mod {
 			flags |= SMS_SPRAY_AIR_FORWARD; // enemies already in the air pushed on forward, not up
 		if (flags && w == SMS_SPRAY_BAZOOKA && setting("rocket_jump_hurt", 1))
 			flags |= SMS_SPRAY_ROCKET_HURT | (setting("rocket_jump_ouch", 1) ? SMS_SPRAY_ROCKET_OUCH : 0)
-			         | ((setting("rocket_jump_cry_volume", 100) & 127) << 13); // its volume, in percent
+			         | ((setting("rocket_jump_cry_volume", 40) & 127) << 13); // its volume, in percent
 		if (flags && setting("rocket_jump", 2) != 0 && setting("enemy_hearts", 1)) // with rocket jumps on
 			flags |= SMS_SPRAY_HEARTS;
 		if (flags) { // how much goop the chosen one cleans, in tenths of the game's own
 			const char* key = w == SMS_SPRAY_RIFLE ? "rifle_goop" : w == SMS_SPRAY_SMG ? "smg_goop" : w == SMS_SPRAY_BAZOOKA ? "bazooka_goop" : 0;
 			if (key)
-				flags |= ((setting(key, 100) / 10) & 127) << 20;
+				flags |= ((setting(key, w == SMS_SPRAY_BAZOOKA ? 400 : 100) / 10) & 127) << 20;
 		}
 		if (flags && w == SMS_SPRAY_BAZOOKA && muteKeysHeld())
 			flags |= 1 << 27; // SMS_SPRAY_MUTE_MARIO: his own voice left out while the keys are held
 		if (flags && w == SMS_SPRAY_BAZOOKA) { // its shot seen flying
-			const int look = setting("bazooka_projectile_look", 1);
+			const int look = setting("bazooka_projectile_look", 2);
 			flags |= look == 0 ? SMS_SPRAY_SHOT_WATER : look == 1 ? SMS_SPRAY_SHOT_BALLOON : SMS_SPRAY_SHOT_BALLOON | SMS_SPRAY_SHOT_BIG;
 		}
 		const int set = w * 1000 + flags;
@@ -422,62 +425,64 @@ struct FluddWeapons : sms::Mod {
 
 	int load() override
 	{
-		optionBool("weapons", "FLUDD weapons, D-pad left and right", true);
-		optionBool("weapons_defeat", "FLUDD weapons can defeat enemies", true);
-		optionBool("third_person_weapons", "FLUDD weapons in third person too", true);
-		optionBool("third_person_models", "Weapon packs in place of FLUDD in third person", true);
-		optionBool("boss_balance", "Weapons made for bosses, not Shadow Mario", true);
-		optionBool("normal_defeat", "FLUDD can defeat enemies", true);
-		optionNumber("normal_defeat_time", "FLUDD time to defeat (tenths of a second)", 4, 1, 100, 1);
-		optionChoice("long_range", "Long range (enemies and characters seen and hit further away)",
+		preset.addRow();
+		preset.optionBool("weapons", "FLUDD weapons, D-pad left and right", true);
+		preset.optionBool("weapons_defeat", "FLUDD weapons can defeat enemies", true);
+		preset.optionBool("third_person_weapons", "FLUDD weapons in third person too", true);
+		preset.optionBool("third_person_models", "Weapon packs in place of FLUDD in third person", true);
+		preset.optionBool("boss_balance", "Weapons made for bosses, not Shadow Mario", true);
+		preset.optionBool("normal_defeat", "FLUDD can defeat enemies", false);
+		preset.optionNumber("normal_defeat_time", "FLUDD time to defeat (tenths of a second)", 4, 1, 100, 1);
+		preset.optionChoice("long_range", "Long range (enemies and characters seen and hit further away)",
 		             std::vector<const char*>(kRanges, kRanges + kRangeCount), 5);
-		optionChoice("shadow_mario", "Shadow Mario difficulty (how many hits to take him down)",
+		preset.optionChoice("shadow_mario", "Shadow Mario difficulty (how many hits to take him down)",
 		             std::vector<const char*>(kShadowLevels, kShadowLevels + kShadowCount), 5);
-		optionNumber("rifle_distance", "Rifle distance from the camera", 50, 30, 120, 5);
-		optionNumber("smg_distance", "Submachine gun distance from the camera", 45, 30, 120, 5);
-		optionNumber("bazooka_distance", "Bazooka distance from the camera", 55, 30, 120, 5);
-		optionNumber("rifle_rate", "Rifle fire rate (tenths of a second)", 13, 1, 100, 1);
-		optionNumber("rifle_push", "Rifle push (percent)", 300, 0, 400, 10);
-		optionNumber("rifle_defeat", "Rifle shots to defeat", 2, 1, 10, 1);
-		optionNumber("rifle_water", "Rifle water per shot", 16, 0, 200, 2);
-		optionNumber("rifle_zoom", "Rifle zoom, D-pad up (field of view)", 25, 5, 60, 5);
-		optionBool("rifle_scope", "Rifle sniper scope while zoomed", true);
-		optionNumber("rifle_hit", "Rifle hit size (percent, how near it must pass an enemy)", 450, 20, 500, 10);
-		optionNumber("rifle_blob", "Rifle blob size in first person (percent)", 80, 20, 400, 10);
-		optionNumber("rifle_blob_scope", "Rifle blob size while zoomed (percent)", 80, 20, 400, 10);
-		optionNumber("rifle_blob_third", "Rifle blob size in third person (percent)", 80, 20, 400, 10);
-		optionNumber("smg_rate", "Submachine gun fire rate (hundredths of a second)", 14, 1, 100, 1);
-		optionNumber("smg_push", "Submachine gun push (percent, under 100 weaker than FLUDD)", 90, 0, 400, 10);
-		optionNumber("smg_defeat", "Submachine gun shots to defeat", 6, 1, 10, 1);
-		optionNumber("smg_water", "Submachine gun water per shot", 16, 0, 200, 2);
-		optionNumber("smg_hit", "Submachine gun hit size (percent)", 100, 20, 500, 10);
-		optionNumber("smg_blob", "Submachine gun blob size (percent)", 20, 20, 400, 10);
-		optionNumber("bazooka_rate", "Bazooka fire rate (tenths of a second)", 8, 1, 200, 1);
-		optionNumber("bazooka_push", "Bazooka push in first person (percent)", 160, 0, 400, 10);
-		optionNumber("bazooka_push_third", "Bazooka push in third person (percent)", 160, 0, 400, 10);
-		optionNumber("bazooka_range", "Bazooka range (percent)", 100, 10, 100, 10);
-		optionNumber("bazooka_defeat", "Bazooka shots to defeat", 3, 1, 10, 1);
-		optionNumber("bazooka_water", "Bazooka water per shot", 60, 0, 300, 5);
-		optionNumber("bazooka_burst", "Bazooka burst size in first person (percent)", 130, 20, 400, 10);
-		optionNumber("bazooka_burst_third", "Bazooka burst size in third person (percent)", 130, 20, 400, 10);
-		optionNumber("bazooka_burst_jump", "Bazooka burst size while rocket jumping (percent)", 130, 20, 400, 10);
-		optionNumber("bazooka_lift", "Bazooka air height (percent)", 40, 0, 400, 10);
-		optionChoice("bazooka_projectile_look", "Bazooka projectile",
-		             std::vector<const char*>(kProjectiles, kProjectiles + kProjectileCount), 1);
-		optionNumber("rifle_goop", "Goop the Rifle cleans (percent)", 100, 100, 1000, 10);
-		optionNumber("smg_goop", "Goop the Submachine gun cleans (percent)", 100, 100, 1000, 10);
-		optionNumber("bazooka_goop", "Goop the Bazooka cleans (percent)", 100, 100, 1000, 10);
-		optionNumber("bazooka_goop_area", "Bazooka goop area (percent)", 100, 10, 1000, 10);
-		optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up", true);
-		optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
+		preset.optionNumber("rifle_distance", "Rifle distance from the camera", 50, 30, 120, 5);
+		preset.optionNumber("smg_distance", "Submachine gun distance from the camera", 45, 30, 120, 5);
+		preset.optionNumber("bazooka_distance", "Bazooka distance from the camera", 55, 30, 120, 5);
+		preset.optionNumber("rifle_rate", "Rifle fire rate (tenths of a second)", 13, 1, 100, 1);
+		preset.optionNumber("rifle_push", "Rifle push (percent)", 300, 0, 400, 10);
+		preset.optionNumber("rifle_defeat", "Rifle shots to defeat", 2, 1, 10, 1);
+		preset.optionNumber("rifle_water", "Rifle water per shot", 16, 0, 200, 2);
+		preset.optionNumber("rifle_zoom", "Rifle zoom, D-pad up (field of view)", 25, 5, 60, 5);
+		preset.optionBool("rifle_scope", "Rifle sniper scope while zoomed", true);
+		preset.optionNumber("rifle_hit", "Rifle hit size (percent, how near it must pass an enemy)", 100, 20, 500, 10);
+		preset.optionNumber("rifle_blob", "Rifle blob size in first person (percent)", 80, 20, 400, 10);
+		preset.optionNumber("rifle_blob_scope", "Rifle blob size while zoomed (percent)", 20, 20, 400, 10);
+		preset.optionNumber("rifle_blob_third", "Rifle blob size in third person (percent)", 80, 20, 400, 10);
+		preset.optionNumber("smg_rate", "Submachine gun fire rate (hundredths of a second)", 14, 1, 100, 1);
+		preset.optionNumber("smg_push", "Submachine gun push (percent, under 100 weaker than FLUDD)", 90, 0, 400, 10);
+		preset.optionNumber("smg_defeat", "Submachine gun shots to defeat", 6, 1, 10, 1);
+		preset.optionNumber("smg_water", "Submachine gun water per shot", 16, 0, 200, 2);
+		preset.optionNumber("smg_hit", "Submachine gun hit size (percent)", 100, 20, 500, 10);
+		preset.optionNumber("smg_blob", "Submachine gun blob size (percent)", 20, 20, 400, 10);
+		preset.optionNumber("bazooka_rate", "Bazooka fire rate (tenths of a second)", 8, 1, 200, 1);
+		preset.optionNumber("bazooka_push", "Bazooka push in first person (percent)", 170, 0, 400, 10);
+		preset.optionNumber("bazooka_push_third", "Bazooka push in third person (percent)", 200, 0, 400, 10);
+		preset.optionNumber("bazooka_range", "Bazooka range (percent)", 100, 10, 100, 10);
+		preset.optionNumber("bazooka_defeat", "Bazooka shots to defeat", 3, 1, 10, 1);
+		preset.optionNumber("bazooka_water", "Bazooka water per shot", 60, 0, 300, 5);
+		preset.optionNumber("bazooka_burst", "Bazooka burst size in first person (percent)", 130, 20, 400, 10);
+		preset.optionNumber("bazooka_burst_third", "Bazooka burst size in third person (percent)", 250, 20, 400, 10);
+		preset.optionNumber("bazooka_burst_jump", "Bazooka burst size while rocket jumping (percent)", 130, 20, 400, 10);
+		preset.optionNumber("bazooka_lift", "Bazooka air height (percent)", 40, 0, 400, 10);
+		preset.optionChoice("bazooka_projectile_look", "Bazooka projectile",
+		             std::vector<const char*>(kProjectiles, kProjectiles + kProjectileCount), 2);
+		preset.optionNumber("rifle_goop", "Goop the Rifle cleans (percent)", 100, 100, 1000, 10);
+		preset.optionNumber("smg_goop", "Goop the Submachine gun cleans (percent)", 100, 100, 1000, 10);
+		preset.optionNumber("bazooka_goop", "Goop the Bazooka cleans (percent)", 400, 100, 1000, 10);
+		preset.optionNumber("bazooka_goop_area", "Bazooka goop area (percent)", 400, 10, 1000, 10);
+		preset.optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up", true);
+		preset.optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
-		optionChoice("rocket_jump_key", "Rocket jump key",
+		preset.optionChoice("rocket_jump_key", "Rocket jump key",
 		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 1);
-		optionBool("rocket_jump_hurt", "Rocket jumps cost Mario 1 health", true);
-		optionBool("rocket_jump_ouch", "Mario cries out when a rocket jump hurts", true);
-		optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 100, 1, 100, 1);
-		optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
-		optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
+		preset.optionBool("rocket_jump_hurt", "Rocket jumps cost Mario 1 health", true);
+		preset.optionBool("rocket_jump_ouch", "Mario cries out when a rocket jump hurts", true);
+		preset.optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 40, 1, 100, 1);
+		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
+		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
+		preset.check();
 
 		// the D-pad, once a frame
 		on<SmsEvFrame>(SMS_EV_FRAME, [this](SmsEvFrame& f) {
