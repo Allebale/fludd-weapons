@@ -336,7 +336,7 @@ struct FluddWeapons : sms::Mod {
 			gs.range         = (float)setting((key + "_life").c_str(), 60) / 60.0f;
 			gs.burst         = (float)setting((key + "_size").c_str(), 100) / 100.0f;
 			gs.push          = 1.0f;
-			gs.to_defeat     = 1;
+			gs.to_defeat     = setting((key + "_hits").c_str(), 1);
 			gs.hit_size      = 1.0f;
 			gs.lift          = 1.0f;
 			gs.drop_size     = 1.0f;
@@ -506,9 +506,11 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 		preset.optionNumber("fire_goop_defeat", "Fire goop burning time before an enemy is defeated (tenths of a second)", 15, 1, 100, 1);
+		preset.optionNumber("fire_goop_hits", "Fire goop burns before an enemy is defeated", 1, 1, 20, 1);
 		preset.optionNumber("fire_goop_life", "Fire goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("fire_goop_size", "Fire goop puddle size (percent)", 100, 20, 300, 10);
 		preset.optionNumber("electric_goop_defeat", "Electric goop shock time before an enemy is defeated (tenths of a second)", 12, 1, 100, 1);
+		preset.optionNumber("electric_goop_hits", "Electric goop shocks before an enemy is defeated", 1, 1, 20, 1);
 		preset.optionNumber("electric_goop_life", "Electric goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("electric_goop_size", "Electric goop puddle size (percent)", 100, 20, 300, 10);
 		preset.optionBool("goop_grass_press", "Electric goop presses the grass down (Remastered builds)", true);
