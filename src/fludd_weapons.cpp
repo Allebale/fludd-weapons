@@ -57,9 +57,12 @@ const SmsHeldFluddApi* heldFluddApi(const SmsApi& api)
 bool has(const SmsHeldFluddApi* h, size_t end) { return h && h->size >= end; }
 #define HELD_HAS(h, field) has(h, offsetof(SmsHeldFluddApi, field) + sizeof(void*))
 
-const char* const kWeaponNames[] = {"FLUDD", "Rifle", "Submachine gun", "Bazooka"};
-const int kWeaponIds[]           = {SMS_SPRAY_NORMAL, SMS_SPRAY_RIFLE, SMS_SPRAY_SMG, SMS_SPRAY_BAZOOKA};
-const int kWeaponCount           = 4;
+const char* const kWeaponNames[] = {"FLUDD", "Rifle", "Submachine gun", "Bazooka", "Fire goop", "Electric goop"};
+const int kWeaponIds[]           = {SMS_SPRAY_NORMAL, SMS_SPRAY_RIFLE, SMS_SPRAY_SMG, SMS_SPRAY_BAZOOKA, SMS_SPRAY_FIRE_GOOP,
+                                    SMS_SPRAY_ELECTRIC_GOOP};
+const int kWeaponCount           = 6;
+// the goop weapons: FLUDD's own stream, as fire or electric goop (R left to the game)
+bool isGoop(int w) { return w == SMS_SPRAY_FIRE_GOOP || w == SMS_SPRAY_ELECTRIC_GOOP; }
 
 // long range: how much further than the game's own distance enemies and characters are drawn and
 // move (the "long_range" setting)
@@ -323,6 +326,22 @@ struct FluddWeapons : sms::Mod {
 		bz.shadow_damage = boss;
 		bz.goop_area     = (float)setting("bazooka_goop_area", 400) / 100.0f;
 		h->set_weapon_stats(SMS_SPRAY_BAZOOKA, &bz);
+		// the goop weapons: seconds to defeat an enemy, how long the goop lasts (in minutes), its puddles' size
+		for (int g = 0; g < 2; g++) {
+			const char* const pre = g ? "electric_goop" : "fire_goop";
+			std::string key(pre);
+			SmsSprayStats gs = SmsSprayStats();
+			gs.size          = sizeof gs;
+			gs.every         = (float)setting((key + "_defeat").c_str(), g ? 6 : 10) / 10.0f;
+			gs.range         = (float)setting((key + "_life").c_str(), 60) / 60.0f;
+			gs.burst         = (float)setting((key + "_size").c_str(), 100) / 100.0f;
+			gs.push          = 1.0f;
+			gs.to_defeat     = 1;
+			gs.hit_size      = 1.0f;
+			gs.lift          = 1.0f;
+			gs.drop_size     = 1.0f;
+			h->set_weapon_stats(g ? SMS_SPRAY_ELECTRIC_GOOP : SMS_SPRAY_FIRE_GOOP, &gs);
+		}
 	}
 
 	// Each frame: the weapon (or none) to the game, its numbers, and the zoom for the First Person mod.
@@ -482,6 +501,12 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 40, 1, 100, 1);
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
+		preset.optionNumber("fire_goop_defeat", "Fire goop time to defeat an enemy (tenths of a second)", 10, 1, 100, 1);
+		preset.optionNumber("fire_goop_life", "Fire goop lasts (seconds)", 60, 5, 600, 5);
+		preset.optionNumber("fire_goop_size", "Fire goop puddle size (percent)", 100, 20, 300, 10);
+		preset.optionNumber("electric_goop_defeat", "Electric goop time to defeat an enemy (tenths of a second)", 6, 1, 100, 1);
+		preset.optionNumber("electric_goop_life", "Electric goop lasts (seconds)", 60, 5, 600, 5);
+		preset.optionNumber("electric_goop_size", "Electric goop puddle size (percent)", 100, 20, 300, 10);
 		preset.check();
 
 		// the D-pad, once a frame
@@ -506,8 +531,8 @@ struct FluddWeapons : sms::Mod {
 			rHeld           = (s.buttons & SMS_PAD_R) || s.trigger_r >= 60;
 			if (onCoaster && s.trigger_r >= 60)
 				s.buttons |= SMS_PAD_R; // on the roller coaster, R pressed part way (a soft R, a mouse button) fires its rocket too
-			if (weaponNow() == 0)
-				return;
+			if (weaponNow() == 0 || isGoop(weaponNow()))
+				return; // (a goop weapon: FLUDD's own stream, R the game's)
 			// R left to the game as FLUDD's own: with the tank empty (its click), and in water with
 			// it not full (it fills up as R is held, as ever); the weapon does not fire then
 			SmsPlayer pl = SmsPlayer();
