@@ -376,6 +376,8 @@ struct FluddWeapons : sms::Mod {
 			gs.hit_size      = (float)setting("goop_wall_life", 15) / 60.0f; // its goop on walls' minutes
 			gs.lift          = g == 2 ? (float)setting("black_goop_air_turn", 30) / 100.0f : 1.0f; // black goop: turning in the air
 			gs.drop_size     = 1.0f;
+			gs.far_scale     = far;  // (the same for every weapon: without it the long range
+			gs.shadow_damage = boss; // and Shadow Mario numbers flipped every frame)
 			gs.water         = setting((key + "_water").c_str(), kWater[g]); // percent of FLUDD's own
 			h->set_weapon_stats(g == 2 ? SMS_SPRAY_BLACK_GOOP : g ? SMS_SPRAY_ELECTRIC_GOOP : SMS_SPRAY_FIRE_GOOP, &gs);
 		}
