@@ -564,7 +564,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("electric_goop_life", "Electric goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("electric_goop_size", "Electric goop puddle size (percent)", 100, 20, 300, 10);
 		preset.optionNumber("black_goop_speed", "Black goop speed (percent)", 200, 50, 1000, 10);
-		preset.optionNumber("black_goop_air_turn", "Turning in the air after a black goop jump (percent, 100 at once)", 50, 0, 100, 5);
+		preset.optionNumber("black_goop_air_turn", "Turning in the air after a black goop jump (percent, 100 at once)", 50, 0, 100, 1);
 		preset.optionNumber("black_goop_water", "Black goop water use (percent of FLUDD's)", 100, 10, 1000, 10);
 		preset.optionNumber("black_goop_life", "Black goop lasts (seconds)", 60, 5, 600, 5);
 		preset.optionNumber("black_goop_size", "Black goop puddle size (percent)", 100, 20, 300, 10);
