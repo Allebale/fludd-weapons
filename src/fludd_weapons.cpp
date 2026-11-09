@@ -366,7 +366,7 @@ struct FluddWeapons : sms::Mod {
 			SmsSprayStats gs = SmsSprayStats();
 			gs.size          = sizeof gs;
 			// (the defaults: fire, electric, black)
-			static const int kDefeat[3] = {20, 12, 12}, kLife[3] = {30, 45, 90}, kSize[3] = {90, 90, 160};
+			static const int kDefeat[3] = {20, 12, 12}, kLife[3] = {30, 45, 90}, kSize[3] = {130, 130, 160};
 			static const int kHits[3] = {2, 3, 1}, kWater[3] = {500, 400, 200};
 			gs.every         = (float)setting((key + "_defeat").c_str(), kDefeat[g]) / 10.0f;
 			gs.range         = (float)setting((key + "_life").c_str(), kLife[g]) / 60.0f;
@@ -561,12 +561,12 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("fire_goop_hits", "Fire goop burns before an enemy is defeated", 2, 1, 20, 1);
 		preset.optionNumber("fire_goop_water", "Fire goop water use (percent of FLUDD's)", 500, 10, 1000, 10);
 		preset.optionNumber("fire_goop_life", "Fire goop lasts (seconds)", 30, 5, 600, 5);
-		preset.optionNumber("fire_goop_size", "Fire goop puddle size (percent)", 90, 20, 300, 10);
+		preset.optionNumber("fire_goop_size", "Fire goop puddle size (percent)", 130, 20, 300, 10);
 		preset.optionNumber("electric_goop_defeat", "Electric goop shock time before an enemy is defeated (tenths of a second)", 12, 1, 100, 1);
 		preset.optionNumber("electric_goop_hits", "Electric goop shocks before an enemy is defeated", 3, 1, 20, 1);
 		preset.optionNumber("electric_goop_water", "Electric goop water use (percent of FLUDD's)", 400, 10, 1000, 10);
 		preset.optionNumber("electric_goop_life", "Electric goop lasts (seconds)", 45, 5, 600, 5);
-		preset.optionNumber("electric_goop_size", "Electric goop puddle size (percent)", 90, 20, 300, 10);
+		preset.optionNumber("electric_goop_size", "Electric goop puddle size (percent)", 130, 20, 300, 10);
 		preset.optionNumber("black_goop_speed", "Black goop speed (percent)", 500, 50, 1000, 10);
 		preset.optionNumber("black_goop_air_turn", "Turning in the air after a black goop jump (percent, 100 at once)", 30, 0, 100, 1);
 		preset.optionNumber("black_goop_water", "Black goop water use (percent of FLUDD's)", 200, 10, 1000, 10);
