@@ -432,6 +432,8 @@ struct FluddWeapons : sms::Mod {
 			flags |= 1 << 29; // fire goop leaves the grass unburnt
 		if (flags && !setting("goop_walls", 1))
 			flags |= 1 << 30; // goop off walls
+		if (flags && !setting("goop_characters", 1))
+			flags |= (int)0x80000000u; // friendly characters left alone by the goop
 		const int set = w * 1000 + flags;
 		if (w || flags || lastSet > 0) {
 			h->set_weapon(w, flags);
@@ -572,6 +574,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("black_goop_water", "Black goop water use (percent of FLUDD's)", 200, 10, 1000, 10);
 		preset.optionNumber("black_goop_life", "Black goop lasts (seconds)", 90, 5, 600, 5);
 		preset.optionNumber("black_goop_size", "Black goop puddle size (percent)", 160, 20, 300, 10);
+		preset.optionBool("goop_characters", "Goop shocks and burns friendly characters (never defeats them)", true);
 		preset.optionBool("goop_walls", "Goop sticks to walls and drips down", true);
 		preset.optionNumber("goop_wall_life", "Goop on walls lasts (seconds)", 15, 5, 300, 5);
 		preset.optionBool("goop_grass_press", "Electric goop presses the grass down (Remastered builds)", false);
