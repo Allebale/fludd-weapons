@@ -1792,6 +1792,9 @@ typedef struct SmsSprayStats {
 	                        weapon's hit takes, times the game's own (1, a Rifle shot a third of it); 0 the game's own */
 	float goop_area;     /* the bazooka's: the round its burst washes goop off in, times its own (860 out from its middle); 0 its
 	                        burst's size's (check size) */
+	int key_launch;      /* the rocket jump key held now (any weapon, the same for every weapon, the last one set): a hit
+	                        throws an enemy on the ground up into the air, and one already in the air is defeated at once;
+	                        0 not (check size) */
 } SmsSprayStats;
 
 /* held_fludd->get_state: what a first-person mod and a weapons mod set, for each other. */
