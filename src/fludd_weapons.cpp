@@ -326,20 +326,21 @@ struct FluddWeapons : sms::Mod {
 		return false;
 	}
 
-	// The rocket jump key's shots (a setting, off by default): the key held now, its shots throw enemies
-	// up and finish those in the air. The keyboard's key is player 1's; a controller's L anyone's.
-	bool keyLaunchNow() const
+	// The rocket jump key's shots (a setting, off by default): with it on, shots on walking enemies in
+	// the air defeat them (2), and while the key is held shots throw those on the ground up (1). The
+	// keyboard's key is player 1's; a controller's L anyone's.
+	int keyLaunchNow() const
 	{
 		if (!setting("rocket_key_launch", 0))
-			return false;
+			return 0;
 		const SmsPad p = pad(cur);
 		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
-			return true;
+			return 3;
 		if (cur != 0)
-			return false;
+			return 2;
 		const int k  = setting("rocket_jump_key", 1);
 		const int sc = input().key_from_name(kRocketKeys[k >= 0 && k < kRocketKeyCount ? k : 0]);
-		return sc > 0 && input().key_down(sc);
+		return sc > 0 && input().key_down(sc) ? 3 : 2;
 	}
 
 	bool rocketJumpOn() const
@@ -363,7 +364,7 @@ struct FluddWeapons : sms::Mod {
 			info("long range: %s (%.1f times as far)", kRanges[r >= 0 && r < kRangeCount ? r : 0], far);
 			lastFar = far;
 		}
-		const bool launch = keyLaunchNow(); // (the rocket jump key's shots, for every weapon)
+		const int launch = keyLaunchNow(); // (air shots and the rocket jump key's shots, for every weapon)
 		const int sh      = setting("shadow_mario", 5);
 		const float boss  = kShadowDamage[sh >= 0 && sh < kShadowCount ? sh : 2];
 		SmsSprayStats ns  = SmsSprayStats(); // FLUDD's own spray: only its time to defeat
@@ -371,7 +372,7 @@ struct FluddWeapons : sms::Mod {
 		ns.every          = (float)setting("normal_defeat_time", 4) / 10.0f;
 		ns.far_scale      = far;
 		ns.shadow_damage = boss;
-		ns.key_launch    = launch ? 1 : 0;
+		ns.key_launch    = launch;
 		h->set_weapon_stats(SMS_SPRAY_NORMAL, &ns);
 
 		SmsSprayStats rf = SmsSprayStats(); // the Rifle: one big, fast blob of water, dead straight
@@ -390,7 +391,7 @@ struct FluddWeapons : sms::Mod {
 		rf.view_distance = (float)setting("rifle_distance", 50);
 		rf.far_scale     = far;
 		rf.shadow_damage = boss;
-		rf.key_launch    = launch ? 1 : 0;
+		rf.key_launch    = launch;
 		h->set_weapon_stats(SMS_SPRAY_RIFLE, &rf);
 
 		SmsSprayStats sm = SmsSprayStats(); // the Submachine gun: the Rifle's kind of shot, faster and softer
@@ -406,7 +407,7 @@ struct FluddWeapons : sms::Mod {
 		sm.view_distance = (float)setting("smg_distance", 45);
 		sm.far_scale     = far;
 		sm.shadow_damage = boss;
-		sm.key_launch    = launch ? 1 : 0;
+		sm.key_launch    = launch;
 		h->set_weapon_stats(SMS_SPRAY_SMG, &sm);
 
 		// the Bazooka: a burst where it lands (an older game reads only the stats it knows)
@@ -430,7 +431,8 @@ struct FluddWeapons : sms::Mod {
 		bz.far_scale     = far;
 		bz.shadow_damage = boss;
 		bz.goop_area     = (float)setting("bazooka_goop_area", 400) / 100.0f;
-		bz.key_launch    = launch ? 1 : 0;
+		bz.key_launch    = launch;
+		bz.feet_forward  = (float)setting("rocket_jump_feet", 0) / 100.0f;
 		h->set_weapon_stats(SMS_SPRAY_BAZOOKA, &bz);
 		// the goop weapons: seconds to defeat an enemy, how long the goop lasts (in minutes), its puddles' size
 		for (int g = 0; g < 3; g++) {
@@ -639,7 +641,8 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 40, 1, 100, 1);
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
-		preset.optionBool("rocket_key_launch", "Rocket jump key shots launch enemies, air shots defeat them", false);
+		preset.optionBool("rocket_key_launch", "Air shots defeat enemies, rocket jump key shots launch them", false);
+		preset.optionNumber("rocket_jump_feet", "Rocket jump forward boost off your feet (percent)", 0, 0, 300, 10);
 		preset.optionNumber("fire_goop_defeat", "Fire goop burning time before an enemy is defeated (tenths of a second)", 20, 1, 100, 1);
 		preset.optionNumber("fire_goop_hits", "Fire goop burns before an enemy is defeated", 2, 1, 20, 1);
 		preset.optionNumber("fire_goop_water", "Fire goop water use (percent of FLUDD's)", 500, 10, 1000, 10);
