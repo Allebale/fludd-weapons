@@ -1797,6 +1797,8 @@ typedef struct SmsSprayStats {
 	                        at once; 0 neither (check size) */
 	float feet_forward;  /* the bazooka's: a rocket jump off a burst at his feet (below him, not in front) throws him
 	                        forward the way he goes, this many times its speed more; 0 not (check size) */
+	float key_lift;      /* the bazooka's: with key_launch's 1, how fast an enemy is thrown up (a 30th of a second's,
+	                        about 70 a very high throw); 0 the game's own default (30) (check size) */
 } SmsSprayStats;
 
 /* held_fludd->get_state: what a first-person mod and a weapons mod set, for each other. */
