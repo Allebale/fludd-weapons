@@ -433,7 +433,7 @@ struct FluddWeapons : sms::Mod {
 		bz.goop_area     = (float)setting("bazooka_goop_area", 400) / 100.0f;
 		bz.key_launch    = launch;
 		bz.feet_forward  = (float)setting("rocket_jump_feet", 0) / 100.0f;
-		bz.key_lift      = 30.0f * (float)setting("rocket_key_launch_height", 100) / 100.0f;
+		bz.key_lift      = 30.0f * (float)setting("rocket_key_launch_height", 80) / 100.0f;
 		h->set_weapon_stats(SMS_SPRAY_BAZOOKA, &bz);
 		// the goop weapons: seconds to defeat an enemy, how long the goop lasts (in minutes), its puddles' size
 		for (int g = 0; g < 3; g++) {
@@ -643,7 +643,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 		preset.optionBool("rocket_key_launch", "Air shots defeat enemies, rocket jump key shots launch them", false);
-		preset.optionNumber("rocket_key_launch_height", "Bazooka rocket jump key launch height (percent)", 100, 10, 300, 10);
+		preset.optionNumber("rocket_key_launch_height", "Bazooka rocket jump key launch height (percent)", 80, 10, 300, 10);
 		preset.optionNumber("rocket_jump_feet", "Rocket jump forward boost off your feet (percent)", 0, 0, 300, 10);
 		preset.optionNumber("fire_goop_defeat", "Fire goop burning time before an enemy is defeated (tenths of a second)", 20, 1, 100, 1);
 		preset.optionNumber("fire_goop_hits", "Fire goop burns before an enemy is defeated", 2, 1, 20, 1);
