@@ -371,7 +371,10 @@ struct FluddWeapons : sms::Mod {
 			gs.every         = (float)setting((key + "_defeat").c_str(), kDefeat[g]) / 10.0f;
 			gs.range         = (float)setting((key + "_life").c_str(), kLife[g]) / 60.0f;
 			gs.burst         = (float)setting((key + "_size").c_str(), kSize[g]) / 100.0f;
-			gs.push          = g == 2 ? (float)setting("black_goop_speed", 500) / 100.0f : 1.0f; // black goop: how fast
+			// black goop: how fast; fire goop: 2 for the goop performance mode (the game's drawing of
+			// every goop simpler)
+			gs.push          = g == 2 ? (float)setting("black_goop_speed", 500) / 100.0f
+			                          : g == 0 && setting("goop_performance", 0) ? 2.0f : 1.0f;
 			gs.to_defeat     = setting((key + "_hits").c_str(), kHits[g]);
 			gs.hit_size      = (float)setting("goop_wall_life", 15) / 60.0f; // its goop on walls' minutes
 			gs.lift          = g == 2 ? (float)setting("black_goop_air_turn", 30) / 100.0f : 1.0f; // black goop: turning in the air
@@ -581,6 +584,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("goop_wall_life", "Goop on walls lasts (seconds)", 15, 5, 300, 5);
 		preset.optionBool("goop_grass_press", "Electric goop presses the grass down (Remastered builds)", false);
 		preset.optionBool("goop_grass_burn", "Fire goop burns the grass away (Remastered builds)", false);
+		preset.optionBool("goop_performance", "Goop performance mode (simpler puddles, for slower PCs)", false);
 		preset.check();
 
 		// the D-pad, once a frame
