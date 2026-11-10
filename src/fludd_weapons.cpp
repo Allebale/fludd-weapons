@@ -88,6 +88,12 @@ const int kRocketKeyCount        = 2;
 const char* const kProjectiles[] = {"Water", "Green water balloon", "Big green water balloon"}; // the bazooka's shot seen flying
 const int kProjectileCount       = 3;
 
+// Split-screen co-op (held_fludd's select_player, First Person beta 2026.11.10): two players
+bool hasPlayers(const SmsHeldFluddApi* h)
+{
+	return HELD_HAS(h, player_view) && h->players && h->player && h->select_player && h->player_view;
+}
+
 } // namespace
 
 struct FluddWeapons : sms::Mod {
@@ -95,19 +101,59 @@ struct FluddWeapons : sms::Mod {
 
 	RecommendedPreset preset{*this}; // the "Settings preset" row: Recommended (the defaults) or Custom
 
-	int weapon    = 0;     // the weapon chosen (kWeaponNames)
-	bool numberWasDown[kWeaponCount] = {};
-	bool rHeld    = false; // R, as the controller has it (kept from the game while a weapon fires)
-	bool zoomed   = false; // the Rifle's zoom
-	bool zoomFromThird = false; // zoomed from third person (into first person for it)
-	bool sawFirst = false;      // ...and first person has come on for it
-	double zoomedAt  = 0;       // when the zoom came on (the scope comes in with it)
-	bool upWasDown = false, rightWasDown = false, leftWasDown = false;
+	// Each player's (co-op: two, each with their own controller; alone, the first)
+	struct Player {
+		int weapon    = 0;     // the weapon chosen (kWeaponNames)
+		bool numberWasDown[kWeaponCount] = {};
+		bool rHeld    = false; // R, as the controller has it (kept from the game while a weapon fires)
+		bool zoomed   = false; // the Rifle's zoom
+		bool zoomFromThird = false; // zoomed from third person (into first person for it)
+		bool sawFirst = false;      // ...and first person has come on for it
+		double zoomedAt  = 0;       // when the zoom came on (the scope comes in with it)
+		bool upWasDown = false, rightWasDown = false, leftWasDown = false;
+		int lastSet    = -1; // the weapon and flags last set, -1 none
+	};
+	Player ps[2];
+	int cur = 0; // the player being worked on
+	Player& P() { return ps[cur]; }
+	const Player& P() const { return ps[cur]; }
 	bool told      = false, toldNone = false;
-	int lastSet    = -1; // the weapon and flags last set, -1 none
 	float lastFar  = 1.0f;
 	double toastUntil = 0;
 	const char* toastText = "";
+	int toastPlayer = 0;
+
+	// co-op: the players, and the game's api acting on one (-1: the one the game runs as)
+	int players() const
+	{
+		const SmsHeldFluddApi* h = heldFluddApi(api());
+		return hasPlayers(h) && h->players() == 2 ? 2 : 1;
+	}
+	int playerNow() const
+	{
+		const SmsHeldFluddApi* h = heldFluddApi(api());
+		return hasPlayers(h) && h->player() == 1 ? 1 : 0;
+	}
+	void select(int player) const
+	{
+		const SmsHeldFluddApi* h = heldFluddApi(api());
+		if (hasPlayers(h))
+			h->select_player(player);
+	}
+	struct For {
+		FluddWeapons& m;
+		int saved;
+		For(FluddWeapons& mod, int p) : m(mod), saved(mod.cur)
+		{
+			m.cur = p;
+			m.select(p);
+		}
+		~For()
+		{
+			m.cur = saved;
+			m.select(-1);
+		}
+	};
 
 	// what the First Person mod has set (first person on, FLUDD held in view)
 	SmsHeldFluddState state() const
@@ -120,7 +166,7 @@ struct FluddWeapons : sms::Mod {
 		return s;
 	}
 
-	int chosen() const { return weapon >= 0 && weapon < kWeaponCount && allowed(weapon) ? kWeaponIds[weapon] : SMS_SPRAY_NORMAL; }
+	int chosen() const { return P().weapon >= 0 && P().weapon < kWeaponCount && allowed(P().weapon) ? kWeaponIds[P().weapon] : SMS_SPRAY_NORMAL; }
 	// a weapon turned off in the menu: not chosen at all (FLUDD always can be)
 	bool allowed(int w) const
 	{
@@ -176,20 +222,24 @@ struct FluddWeapons : sms::Mod {
 
 	void toast(const char* text)
 	{
-		toastText  = text;
-		toastUntil = core().time() + 1.5;
+		toastText   = text;
+		toastUntil  = core().time() + 1.5;
+		toastPlayer = cur;
 	}
 
-	// D-pad left and right: the weapon
+	// D-pad left and right: the weapon (each player's own controller; the number keys player 1's)
 	void switchWeapon(const SmsPad& p)
 	{
+		Player& pl = P();
+		int& weapon = pl.weapon;
 		const bool right = (p.held & SMS_PAD_RIGHT) != 0, left = (p.held & SMS_PAD_LEFT) != 0;
-		const bool newRight = right && !rightWasDown, newLeft = left && !leftWasDown;
-		rightWasDown = right;
-		leftWasDown  = left;
+		const bool newRight = right && !pl.rightWasDown, newLeft = left && !pl.leftWasDown;
+		pl.rightWasDown = right;
+		pl.leftWasDown  = left;
+		bool* numberWasDown = pl.numberWasDown;
 		// or a number key: each weapon's own (the menu's), as it goes down
 		int byKey = -1;
-		for (int w = 0; w < kWeaponCount; w++) {
+		for (int w = 0; w < kWeaponCount && cur == 0; w++) {
 			char key[32];
 			snprintf(key, sizeof key, "weapon_key_%d", w);
 			const int k  = setting(key, kKeyDefaults[w]); // 0 none, 1..9 the keys 1 to 9, 10 the key 0
@@ -209,10 +259,10 @@ struct FluddWeapons : sms::Mod {
 				if (allowed(weapon))
 					break;
 			}
-		if (zoomed && !zoomFromThird)
-			zoomed = false;
+		if (pl.zoomed && !pl.zoomFromThird)
+			pl.zoomed = false;
 		toast(kWeaponNames[weapon]);
-		info("weapon: %s", kWeaponNames[weapon]);
+		info("%sweapon: %s", cur ? "player 2's " : "", kWeaponNames[weapon]);
 	}
 
 	// D-pad up: the Rifle's zoom on and off in first person (FLUDD in view); in third person with
@@ -224,6 +274,12 @@ struct FluddWeapons : sms::Mod {
 	}
 	void toggleZoom(const SmsPad& p)
 	{
+		Player& pl = P();
+		bool& zoomed = pl.zoomed;
+		bool& zoomFromThird = pl.zoomFromThird;
+		bool& sawFirst = pl.sawFirst;
+		double& zoomedAt = pl.zoomedAt;
+		bool& upWasDown = pl.upWasDown;
 		const bool fp = firstPerson();
 		if (zoomFromThird && fp)
 			sawFirst = true;
@@ -259,10 +315,10 @@ struct FluddWeapons : sms::Mod {
 	// Left Ctrl, Left Shift or a controller's L held: Mario's own voice muted (his rocket jump's cries alone)
 	bool muteKeysHeld() const
 	{
-		const SmsPad p = pad(0);
+		const SmsPad p = pad(cur);
 		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
 			return true;
-		for (int k = 0; k < kRocketKeyCount; k++) {
+		for (int k = 0; k < kRocketKeyCount && cur == 0; k++) { // (the keyboard: player 1's)
 			const int sc = input().key_from_name(kRocketKeys[k]);
 			if (sc > 0 && input().key_down(sc))
 				return true;
@@ -311,7 +367,7 @@ struct FluddWeapons : sms::Mod {
 		// its blob's size: zoomed (the scope), else first or third person's
 		const SmsHeldFluddState seen = state();
 		const bool inView  = seen.first_person && seen.held;
-		rf.drop_size     = (float)setting(zoomed && inView ? "rifle_blob_scope" : inView ? "rifle_blob" : "rifle_blob_third", zoomed && inView ? 20 : 80) / 100.0f;
+		rf.drop_size     = (float)setting(P().zoomed && inView ? "rifle_blob_scope" : inView ? "rifle_blob" : "rifle_blob_third", P().zoomed && inView ? 20 : 80) / 100.0f;
 		rf.burst         = 1.0f;
 		rf.view_distance = (float)setting("rifle_distance", 50);
 		rf.far_scale     = far;
@@ -403,7 +459,7 @@ struct FluddWeapons : sms::Mod {
 		}
 		const SmsHeldFluddState s = state();
 		const int w               = weaponNow();
-		const int defeat          = (setting("weapons_defeat", 1) ? SMS_SPRAY_DEFEAT : 0) | (rHeld ? 2 : 0)
+		const int defeat          = (setting("weapons_defeat", 1) ? SMS_SPRAY_DEFEAT : 0) | (P().rHeld ? 2 : 0)
 		                 | (setting("boss_balance", 1) ? SMS_SPRAY_BOSSES : 0);
 		const int normal          = setting("normal_defeat", 0) ? SMS_SPRAY_DEFEAT_NORMAL : 0;
 		int flags                 = 0;
@@ -440,21 +496,21 @@ struct FluddWeapons : sms::Mod {
 		if (flags && !setting("goop_characters", 1))
 			flags |= (int)0x80000000u; // friendly characters left alone by the goop
 		const int set = w * 1000 + flags;
-		if (w || flags || lastSet > 0) {
+		if (w || flags || P().lastSet > 0) {
 			h->set_weapon(w, flags);
 			if (w || flags)
 				sendStats(h);
 		}
-		lastSet = set;
+		P().lastSet = set;
 		if (HELD_HAS(h, set_zoom) && h->set_zoom)
-			h->set_zoom(zoomed ? (float)setting("rifle_zoom", 25) : 0.0f,
-			            zoomed ? (zoomFromThird ? SMS_ZOOM_FIRST_PERSON : 0) | (scopeShown() ? SMS_ZOOM_SCOPE : 0) : 0);
+			h->set_zoom(P().zoomed ? (float)setting("rifle_zoom", 25) : 0.0f,
+			            P().zoomed ? (P().zoomFromThird ? SMS_ZOOM_FIRST_PERSON : 0) | (scopeShown() ? SMS_ZOOM_SCOPE : 0) : 0);
 	}
 
 	bool scopeShown() const
 	{
 		const SmsHeldFluddState s = state();
-		return zoomed && setting("rifle_scope", 1) && s.first_person && s.held && chosen() == SMS_SPRAY_RIFLE;
+		return P().zoomed && setting("rifle_scope", 1) && s.first_person && s.held && chosen() == SMS_SPRAY_RIFLE;
 	}
 
 	// The Rifle's sniper scope while it is zoomed: black round a round sight, thin cross hairs with
@@ -463,7 +519,7 @@ struct FluddWeapons : sms::Mod {
 	{
 		if (!scopeShown() || state().game_scope)
 			return; // the game draws it itself, under its HUD
-		float in = (float)((core().time() - zoomedAt) / 0.3);
+		float in = (float)((core().time() - P().zoomedAt) / 0.3);
 		in       = in < 0.0f ? 0.0f : in > 1.0f ? 1.0f : in;
 		if (in < 0.05f)
 			return;
@@ -471,6 +527,8 @@ struct FluddWeapons : sms::Mod {
 		draw().canvas(&w, &h);
 		const float x = w * 0.5f, y = h * 0.5f, rad = h * 0.46f;
 		const uint8_t a = (uint8_t)(255.0f * in);
+		// (co-op: the game draws each player's scope in their part of the screen; this one only
+		// for a game that does not draw it)
 		const float out = sqrtf(x * x + y * y) + 4.0f; // past the corners
 		draw().circle_outline(x, y, (rad + out) * 0.5f, out - rad, SMS_RGBA(0, 0, 0, a)); // all round the sight
 		draw().circle_outline(x, y, rad, h * 0.012f, SMS_RGBA(20, 20, 20, a));          // its rim
@@ -591,8 +649,11 @@ struct FluddWeapons : sms::Mod {
 		on<SmsEvFrame>(SMS_EV_FRAME, [this](SmsEvFrame& f) {
 			if (f.mode != SMS_MODE_STAGE)
 				return;
-			switchWeapon(pad(0));
-			toggleZoom(pad(0));
+			for (int pl = 0; pl < players(); pl++) { // each player's own controller (co-op)
+				For w(*this, pl);
+				switchWeapon(pad(pl));
+				toggleZoom(pad(pl));
+			}
 		});
 
 		// R: the weapon's while one can fire (no stream, pump or its sound from the game); the game
@@ -605,7 +666,44 @@ struct FluddWeapons : sms::Mod {
 		on<SmsEvPadRead>(SMS_EV_PAD_READ, [this](SmsEvPadRead& r) {
 			if (!r.pads)
 				return;
-			SmsPadStatus& s = r.pads[0];
+			for (int pl = 0; pl < players(); pl++) { // each player's own controller (co-op)
+				For w(*this, pl);
+				padRead(r.pads[pl]);
+			}
+		});
+
+		on<SmsEvCamera>(SMS_EV_CAMERA, [this](SmsEvCamera&) {
+			cur = playerNow(); // each player's camera (co-op: the game runs as them)
+			update();
+			cur = 0;
+		});
+
+		on<SmsEvDraw>(SMS_EV_DRAW, [this](SmsEvDraw& d) {
+			if (d.mode != SMS_MODE_STAGE)
+				return;
+			if (players() == 1)
+				drawScope();
+			if (core().time() > toastUntil)
+				return;
+			char text[64];
+			snprintf(text, sizeof text, "%s%s", players() < 2 ? "" : toastPlayer ? "Player 2 " : "Player 1 ", toastText);
+			const float w = draw().text_width(14, text) + 20;
+			SmsRect r;
+			if (!draw().hud_slot(handle(), SMS_ANCHOR_TOP, w, 26, &r))
+				return;
+			draw().rect(r.x, r.y, r.w, r.h, SMS_RGBA(0, 0, 0, 170));
+			draw().text(r.x + 10, r.y + 6, 14, SMS_RGB(255, 255, 255), SMS_TEXT_SHADOW, text);
+		});
+
+		info("loaded");
+		return 0;
+	}
+
+	// A player's controller as read (`s`): R the weapon's while one can fire (kept from the game)
+	void padRead(SmsPadStatus& s)
+	{
+		bool& rHeld = P().rHeld;
+		{
 			rHeld           = (s.buttons & SMS_PAD_R) || s.trigger_r >= 60;
 			if (onCoaster && s.trigger_r >= 60)
 				s.buttons |= SMS_PAD_R; // on the roller coaster, R pressed part way (a soft R, a mouse button) fires its rocket too
@@ -622,26 +720,7 @@ struct FluddWeapons : sms::Mod {
 			}
 			s.buttons &= (uint16_t)~SMS_PAD_R;
 			s.trigger_r = 0;
-		});
-
-		on<SmsEvCamera>(SMS_EV_CAMERA, [this](SmsEvCamera&) { update(); });
-
-		on<SmsEvDraw>(SMS_EV_DRAW, [this](SmsEvDraw& d) {
-			if (d.mode != SMS_MODE_STAGE)
-				return;
-			drawScope();
-			if (core().time() > toastUntil)
-				return;
-			const float w = draw().text_width(14, toastText) + 20;
-			SmsRect r;
-			if (!draw().hud_slot(handle(), SMS_ANCHOR_TOP, w, 26, &r))
-				return;
-			draw().rect(r.x, r.y, r.w, r.h, SMS_RGBA(0, 0, 0, 170));
-			draw().text(r.x + 10, r.y + 6, 14, SMS_RGB(255, 255, 255), SMS_TEXT_SHADOW, toastText);
-		});
-
-		info("loaded");
-		return 0;
+		}
 	}
 };
 
