@@ -491,8 +491,15 @@ struct Engine {
 						d.alive = 0; // (its drop is done)
 						burst(st->player, BAZOOKA, shot, at, cur(BAZOOKA), curSettings(BAZOOKA), way);
 					}
-				} else
+				} else {
+					// very near (the drop set off inside it) or far (that fast it went through): the
+					// drop never reached it as the game sees it, so the game's own water hit (its own
+					// push, a Strollin' Stu's roll) given here too, once a shot
+					Hit* h = hitOf(st->target);
+					if (h && h->lastShot != shot)
+						api->actor->send(st->target, 0, kSprayed);
 					hitEnemy(st->target, st->player, st->weapon, shot, hl > 1e-3f ? way.x / hl : 0.0f, hl > 1e-3f ? way.z / hl : 0.0f);
+				}
 				st->target = 0;
 			}
 			if (d.alive > 0 && d.alive < 30)
