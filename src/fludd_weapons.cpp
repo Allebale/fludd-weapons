@@ -346,7 +346,7 @@ struct FluddWeapons : sms::Mod {
 	// keyboard's key is player 1's; a controller's L anyone's.
 	int keyLaunchNow() const
 	{
-		if (!setting("rocket_key_launch", 0))
+		if (!setting("rocket_key_launch", 1))
 			return 0;
 		const SmsPad p = pad(cur);
 		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
@@ -406,8 +406,8 @@ struct FluddWeapons : sms::Mod {
 			s.range    = (float)setting("bazooka_range", 100) / 100.0f;
 			s.toDefeat = setting("bazooka_defeat", 3);
 			s.water    = setting("bazooka_water", 60);
-			s.burst    = (float)setting(inView && jump ? "bazooka_burst_jump" : inView ? "bazooka_burst" : "bazooka_burst_third", inView ? 130 : 250) / 100.0f;
-			s.push     = (float)setting(inView ? "bazooka_push" : "bazooka_push_third", inView ? 170 : 200) / 100.0f;
+			s.burst    = (float)setting(inView && jump ? "bazooka_burst_jump" : inView ? "bazooka_burst" : "bazooka_burst_third", inView ? 130 : 400) / 100.0f;
+			s.push     = (float)setting(inView ? "bazooka_push" : "bazooka_push_third", inView ? 200 : 800) / 100.0f;
 			s.lift     = (float)setting("bazooka_lift", 40) / 100.0f;
 		}
 		return s;
@@ -483,8 +483,8 @@ struct FluddWeapons : sms::Mod {
 		const SmsHeldFluddState view = state();
 		const bool held  = view.first_person && view.held;
 		const bool jump  = rocketJumpOn();
-		bz.burst         = (float)setting(held && jump ? "bazooka_burst_jump" : held ? "bazooka_burst" : "bazooka_burst_third", held ? 130 : 250) / 100.0f;
-		bz.push          = (float)setting(held ? "bazooka_push" : "bazooka_push_third", held ? 170 : 200) / 100.0f;
+		bz.burst         = (float)setting(held && jump ? "bazooka_burst_jump" : held ? "bazooka_burst" : "bazooka_burst_third", held ? 130 : 400) / 100.0f;
+		bz.push          = (float)setting(held ? "bazooka_push" : "bazooka_push_third", held ? 200 : 800) / 100.0f;
 		bz.lift          = (float)setting("bazooka_lift", 40) / 100.0f;
 		bz.self_jump     = jump ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
 		bz.view_distance = (float)setting("bazooka_distance", 55);
@@ -492,7 +492,7 @@ struct FluddWeapons : sms::Mod {
 		bz.shadow_damage = boss;
 		bz.goop_area     = (float)setting("bazooka_goop_area", 400) / 100.0f;
 		bz.key_launch    = launch;
-		bz.feet_forward  = (float)setting("rocket_jump_feet", 0) / 100.0f;
+		bz.feet_forward  = (float)setting("rocket_jump_feet", 50) / 100.0f;
 		bz.key_lift      = 30.0f * (float)setting("rocket_key_launch_height", 80) / 100.0f;
 		h->set_weapon_stats(SMS_SPRAY_BAZOOKA, &bz);
 		// the goop weapons: seconds to defeat an enemy, how long the goop lasts (in minutes), its puddles' size
@@ -502,8 +502,8 @@ struct FluddWeapons : sms::Mod {
 			SmsSprayStats gs = SmsSprayStats();
 			gs.size          = sizeof gs;
 			// (the defaults: fire, electric, black)
-			static const int kDefeat[3] = {20, 12, 12}, kLife[3] = {30, 45, 90}, kSize[3] = {130, 130, 160};
-			static const int kHits[3] = {2, 3, 1}, kWater[3] = {500, 400, 200};
+			static const int kDefeat[3] = {5, 12, 12}, kLife[3] = {20, 20, 90}, kSize[3] = {130, 130, 160};
+			static const int kHits[3] = {3, 1, 1}, kWater[3] = {250, 200, 200};
 			gs.every         = (float)setting((key + "_defeat").c_str(), kDefeat[g]) / 10.0f;
 			gs.range         = (float)setting((key + "_life").c_str(), kLife[g]) / 60.0f;
 			gs.burst         = (float)setting((key + "_size").c_str(), kSize[g]) / 100.0f;
@@ -678,13 +678,13 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("smg_hit", "Submachine gun hit size (percent)", 100, 20, 500, 10);
 		preset.optionNumber("smg_blob", "Submachine gun blob size (percent)", 20, 20, 400, 10);
 		preset.optionNumber("bazooka_rate", "Bazooka fire rate (tenths of a second)", 8, 1, 200, 1);
-		preset.optionNumber("bazooka_push", "Bazooka push in first person (percent)", 170, 0, 400, 10);
-		preset.optionNumber("bazooka_push_third", "Bazooka push in third person (percent)", 200, 0, 1000, 10);
+		preset.optionNumber("bazooka_push", "Bazooka push in first person (percent)", 200, 0, 400, 10);
+		preset.optionNumber("bazooka_push_third", "Bazooka push in third person (percent)", 800, 0, 1000, 10);
 		preset.optionNumber("bazooka_range", "Bazooka range (percent)", 100, 10, 100, 10);
 		preset.optionNumber("bazooka_defeat", "Bazooka shots to defeat", 3, 1, 10, 1);
 		preset.optionNumber("bazooka_water", "Bazooka water per shot", 60, 0, 300, 5);
 		preset.optionNumber("bazooka_burst", "Bazooka burst size in first person (percent)", 130, 20, 400, 10);
-		preset.optionNumber("bazooka_burst_third", "Bazooka burst size in third person (percent)", 250, 20, 1000, 10);
+		preset.optionNumber("bazooka_burst_third", "Bazooka burst size in third person (percent)", 400, 20, 1000, 10);
 		preset.optionNumber("bazooka_burst_jump", "Bazooka burst size while rocket jumping (percent)", 130, 20, 400, 10);
 		preset.optionNumber("bazooka_lift", "Bazooka air height (percent)", 40, 0, 400, 10);
 		preset.optionChoice("bazooka_projectile_look", "Bazooka projectile",
@@ -703,18 +703,18 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 40, 1, 100, 1);
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
-		preset.optionBool("rocket_key_launch", "Bazooka air shots defeat enemies, key shots launch them", false);
+		preset.optionBool("rocket_key_launch", "Bazooka air shots defeat enemies, key shots launch them", true);
 		preset.optionNumber("rocket_key_launch_height", "Bazooka rocket jump key launch height (percent)", 80, 10, 300, 10);
-		preset.optionNumber("rocket_jump_feet", "Rocket jump forward boost off your feet (percent)", 0, 0, 300, 10);
-		preset.optionNumber("fire_goop_defeat", "Fire goop burning time before an enemy is defeated (tenths of a second)", 20, 1, 100, 1);
-		preset.optionNumber("fire_goop_hits", "Fire goop burns before an enemy is defeated", 2, 1, 20, 1);
-		preset.optionNumber("fire_goop_water", "Fire goop water use (percent of FLUDD's)", 500, 10, 1000, 10);
-		preset.optionNumber("fire_goop_life", "Fire goop lasts (seconds)", 30, 5, 600, 5);
+		preset.optionNumber("rocket_jump_feet", "Rocket jump forward boost off your feet (percent)", 50, 0, 300, 10);
+		preset.optionNumber("fire_goop_defeat", "Fire goop burning time before an enemy is defeated (tenths of a second)", 5, 1, 100, 1);
+		preset.optionNumber("fire_goop_hits", "Fire goop burns before an enemy is defeated", 3, 1, 20, 1);
+		preset.optionNumber("fire_goop_water", "Fire goop water use (percent of FLUDD's)", 250, 10, 1000, 10);
+		preset.optionNumber("fire_goop_life", "Fire goop lasts (seconds)", 20, 5, 600, 5);
 		preset.optionNumber("fire_goop_size", "Fire goop puddle size (percent)", 130, 20, 300, 10);
 		preset.optionNumber("electric_goop_defeat", "Electric goop shock time before an enemy is defeated (tenths of a second)", 12, 1, 100, 1);
-		preset.optionNumber("electric_goop_hits", "Electric goop shocks before an enemy is defeated", 3, 1, 20, 1);
-		preset.optionNumber("electric_goop_water", "Electric goop water use (percent of FLUDD's)", 400, 10, 1000, 10);
-		preset.optionNumber("electric_goop_life", "Electric goop lasts (seconds)", 45, 5, 600, 5);
+		preset.optionNumber("electric_goop_hits", "Electric goop shocks before an enemy is defeated", 1, 1, 20, 1);
+		preset.optionNumber("electric_goop_water", "Electric goop water use (percent of FLUDD's)", 200, 10, 1000, 10);
+		preset.optionNumber("electric_goop_life", "Electric goop lasts (seconds)", 20, 5, 600, 5);
 		preset.optionNumber("electric_goop_size", "Electric goop puddle size (percent)", 130, 20, 300, 10);
 		preset.optionNumber("black_goop_speed", "Black goop speed (percent)", 500, 50, 1000, 10);
 		preset.optionNumber("black_goop_air_turn", "Turning in the air after a black goop jump (percent, 100 at once)", 30, 0, 100, 1);
