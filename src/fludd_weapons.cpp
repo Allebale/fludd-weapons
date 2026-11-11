@@ -669,12 +669,12 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("smg_blob", "Submachine gun blob size (percent)", 20, 20, 400, 10);
 		preset.optionNumber("bazooka_rate", "Bazooka fire rate (tenths of a second)", 8, 1, 200, 1);
 		preset.optionNumber("bazooka_push", "Bazooka push in first person (percent)", 170, 0, 400, 10);
-		preset.optionNumber("bazooka_push_third", "Bazooka push in third person (percent)", 200, 0, 400, 10);
+		preset.optionNumber("bazooka_push_third", "Bazooka push in third person (percent)", 200, 0, 1000, 10);
 		preset.optionNumber("bazooka_range", "Bazooka range (percent)", 100, 10, 100, 10);
 		preset.optionNumber("bazooka_defeat", "Bazooka shots to defeat", 3, 1, 10, 1);
 		preset.optionNumber("bazooka_water", "Bazooka water per shot", 60, 0, 300, 5);
 		preset.optionNumber("bazooka_burst", "Bazooka burst size in first person (percent)", 130, 20, 400, 10);
-		preset.optionNumber("bazooka_burst_third", "Bazooka burst size in third person (percent)", 250, 20, 400, 10);
+		preset.optionNumber("bazooka_burst_third", "Bazooka burst size in third person (percent)", 250, 20, 1000, 10);
 		preset.optionNumber("bazooka_burst_jump", "Bazooka burst size while rocket jumping (percent)", 130, 20, 400, 10);
 		preset.optionNumber("bazooka_lift", "Bazooka air height (percent)", 40, 0, 400, 10);
 		preset.optionChoice("bazooka_projectile_look", "Bazooka projectile",
