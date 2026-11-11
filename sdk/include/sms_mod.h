@@ -1972,6 +1972,7 @@ struct SmsWaterDrop {
 	                           player it is made for (its hits are theirs), -1 the one the game runs as */
 	float rate;             /* nozzle_drop: the tank's water one drop of its stream uses */
 	int landed;             /* get: 0 flying, 1 on the ground, 2 on a wall */
+	float clean;            /* get: how far round it washes goop off as it lands (its kind of drop's own) */
 };
 
 typedef struct SmsEvWaterEmit {
@@ -1995,8 +1996,8 @@ typedef struct SmsWaterApi {
 	   before it end: keep a drop's tag, not its slot, from tick to tick. */
 	int (*count)(void);
 	int (*get)(int slot, SmsWaterDrop* out);
-	/* A drop's position, velocity and alive (its drop_size too, if over
-	   0). 0: no such slot. */
+	/* A drop's position, velocity, alive and tag (its drop_size too, if
+	   over 0). 0: no such slot. */
 	int (*set)(int slot, const SmsWaterDrop* in);
 	/* The slot of the drop a hit came from (SmsEvHit's sender), or -1. */
 	int (*drop_of)(SmsObject sender);
@@ -2047,6 +2048,10 @@ typedef struct SmsActorApi {
 	/* The game's own message (HIT_MESSAGE_*) to it, as from `sender` (an
 	   object, or 0: the player's Mario): what it makes of it (1 taken). */
 	int (*send)(SmsObject actor, SmsObject sender, uint32_t message);
+	/* An enemy the game defeats when it is thrown against a wall (Strollin'
+	   Stus rolling away from water) defeated so, now: 1 done, 0 not one of
+	   those (or already going). */
+	int (*wall_defeat)(SmsObject actor);
 } SmsActorApi;
 
 enum { SMS_SPRAY_NORMAL = 0, SMS_SPRAY_SHOTGUN = 1, SMS_SPRAY_RIFLE = 2, SMS_SPRAY_BAZOOKA = 3, SMS_SPRAY_SMG = 4 };

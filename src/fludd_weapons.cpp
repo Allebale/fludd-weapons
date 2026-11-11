@@ -366,6 +366,11 @@ struct FluddWeapons : sms::Mod {
 		const bool inView = seen.first_person && seen.held;
 		s.defeat = setting("weapons_defeat", 1) != 0;
 		s.third  = setting("third_person_weapons", 1) != 0;
+		s.inView = inView;
+		const char* goopKey = w == SMS_SPRAY_RIFLE ? "rifle_goop" : w == SMS_SPRAY_SMG ? "smg_goop" : "bazooka_goop";
+		s.goop     = (float)setting(goopKey, w == SMS_SPRAY_BAZOOKA ? 400 : 100) / 100.0f;
+		s.goopArea = w == SMS_SPRAY_BAZOOKA ? (float)setting("bazooka_goop_area", 400) / 100.0f : 0.0f;
+		s.noClean  = w == SMS_SPRAY_BAZOOKA && muteKeysHeld();
 		s.hitSize = 1.0f;
 		s.dropSize = 1.0f;
 		s.range = 1.0f;

@@ -74,6 +74,10 @@ struct Settings {
 	int toDefeat, water;
 	bool defeat;  // shots may defeat enemies
 	bool third;   // fired in third person too (FLUDD on his back)
+	bool inView;  // the player has FLUDD held in view (first person)
+	float goop;   // how much goop it washes off, times the game's own
+	float goopArea; // the bazooka's burst: how far round it washes goop, times 860 (0: the burst's own)
+	bool noClean; // the bazooka's rocket jump keys held: it washes no goop (a black goop run kept)
 };
 
 const float kHitWindow   = 4.0f;     // seconds: shots counted together towards a defeat
@@ -99,6 +103,7 @@ struct Engine {
 		V lanes[kMostLanes];
 		int laneCount = 0;
 		float reachTo = 0, speed = 0, aim = 0;
+		double until = 0; // kept straight till then (seven shots' time: the submachine gun's reach)
 		SmsObject target = 0; // far away: what it was aimed at, hit as the shot gets there
 		int weapon = 0, player = 0;
 	};
@@ -362,6 +367,7 @@ struct Engine {
 			st->target  = (l > 3000.0f || weapon == RIFLE) && weapon != BAZOOKA ? e : 0;
 			st->weapon  = weapon;
 			st->player  = player;
+			st->until   = time + 7.0 * (k.every > 0.1f ? k.every : 0.1f);
 			if (weapon == BAZOOKA)
 				pl.bazookaAt = at;
 			api->core->log(mod, SMS_LOG_DEBUG, "the %s aimed at %s %.0f away", kNames[weapon], e ? "an enemy" : "nothing", l);
@@ -431,14 +437,23 @@ struct Engine {
 		for (int i = 0; i < n; i++) {
 			SmsWaterDrop d = SmsWaterDrop();
 			d.size         = sizeof d;
-			if (!api->water->get(i, &d) || !mine(d.tag) || d.landed)
+			if (!api->water->get(i, &d) || !mine(d.tag))
 				continue;
+			if (d.landed) { // on the ground or a wall: a rifle's or submachine gun's washes more goop off, once
+				const int w = tagWeapon(d.tag);
+				if ((w == RIFLE || w == SMG) && curSettings(w).goop > 1.0f) {
+					api->game->clean_goop(&d.position, d.clean * curSettings(w).goop);
+					d.tag = 0; // (no longer this mod's: it has hit what it will)
+					api->water->set(i, &d);
+				}
+				continue;
+			}
 			const uint32_t shot = tagShot(d.tag);
 			Straight* st = nullptr;
 			for (int q = 0; q < kMostStraight && !st; q++)
 				if (flights[q].shot == shot)
 					st = &flights[q];
-			if (!st)
+			if (!st || time > st->until)
 				continue;
 			const V p(d.position);
 			if ((p - st->from).len() > st->reachTo)
@@ -520,8 +535,12 @@ struct Engine {
 				h.vx = h.vz = 0.0f; // the stage's edge
 				continue;
 			}
-			if (moved == 2) { // against a wall: slides on, slower
-				h.vx *= 0.5f;
+			if (moved == 2) { // against a wall: those the game defeats so (Strollin' Stus) are, hard enough
+				if (h.vx * h.vx + h.vz * h.vz > 6.0f * 6.0f && api->actor->wall_defeat(h.enemy)) {
+					h.vx = h.vz = 0.0f;
+					continue;
+				}
+				h.vx *= 0.5f; // the rest slide on, slower
 				h.vz *= 0.5f;
 			}
 			h.vx *= keep;
@@ -636,9 +655,33 @@ struct Engine {
 			api->audio->play_sound_at(kSoundExplosion, &c);
 	}
 
+	// Goop washed off round a burst: where it burst (goop on a wall too), and spots on the ground in two
+	// rings round it, each bigger the more it cleans
+	void cleanGoop(const V& at, float r, float strength, bool none)
+	{
+		if (none)
+			return;
+		const SmsVec3 c = at.s();
+		api->game->clean_goop(&c, r * 0.6f);
+		const float spot = r * 0.35f * (strength > 1.0f ? strength : 1.0f);
+		for (int ring = 0; ring < 3; ring++) {
+			const int count = ring == 0 ? 1 : ring == 1 ? 7 : 13;
+			const float rad = ring == 0 ? 0.0f : ring == 1 ? r * 0.42f : r * 0.8f;
+			for (int i = 0; i < count; i++) {
+				const float a = 6.2831853f * (float)i / (float)count + (float)ring * 0.4f;
+				V p(at.x + cosf(a) * rad, at.y, at.z + sinf(a) * rad);
+				SmsVec3 hit;
+				const SmsVec3 top = V(p.x, at.y + 300.0f, p.z).s(), low = V(p.x, at.y - 800.0f, p.z).s();
+				if (api->game->ray(&top, &low, &hit)) // the ground there
+					p.y = hit.y;
+				const SmsVec3 sp = p.s();
+				api->game->clean_goop(&sp, spot);
+			}
+		}
+	}
+
 	void burst(int player, int weapon, uint32_t shot, const V& at, const Weapon& k, const Settings& s)
 	{
-		(void)s;
 		const float r = k.burst;
 		SmsObject seen[96];
 		const SmsVec3 c = at.s();
@@ -656,7 +699,7 @@ struct Engine {
 			hitEnemy(seen[i], player, weapon, shot, l > 1.0f ? x / l : 0.0f, l > 1.0f ? z / l : 0.0f);
 			inIt++;
 		}
-		api->game->clean_goop(&c, r * 1.2f);
+		cleanGoop(at, s.goopArea > 0.0f ? 860.0f * s.goopArea : r * 1.2f, s.goop, s.noClean);
 		explode(player, at, r);
 		api->core->log(mod, SMS_LOG_INFO, "the bazooka burst at (%.0f, %.0f, %.0f), %d enemies in it", at.x, at.y, at.z, inIt);
 	}
@@ -742,7 +785,7 @@ struct Engine {
 		w               = d;
 		w.every    = s.every >= 0.05f ? s.every : 0.05f;
 		w.shove    = d.shove * (s.push >= 1.0f ? s.push : 0.0f); // under 100 percent: none of its own, the game's softened
-		w.lift     = d.lift * (s.lift >= 0.0f ? s.lift : 0.0f);
+		w.lift     = d.lift * (s.lift >= 0.0f ? s.lift : 0.0f) * (s.inView ? 1.0f : 0.5f); // (third person: mostly pushed)
 		w.size     = d.size * (s.dropSize > 0.05f ? s.dropSize : 1.0f);
 		w.toDefeat = s.toDefeat >= 1 ? s.toDefeat : 1;
 		w.water    = s.water >= 0 ? s.water : 0;
