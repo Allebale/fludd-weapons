@@ -102,7 +102,8 @@ struct FluddWeapons : sms::Mod {
 
 	RecommendedPreset preset{*this}; // the "Settings preset" row: Recommended (the defaults) or Custom
 	shots::Engine eng; // the shots, hits and bursts (the mod API's water drops and actors)
-	bool playing = false; // the stage's opening is over (SMS_EV_STAGE_START): the player has the controls
+	bool playing = true; // the stage's opening is over (SMS_EV_STAGE_START): the player has the controls
+	                     // (true as the mod loads: loaded in play)
 	// shots only while the player plays: not in a stage's opening, a cutscene or a talk
 	bool canFire() const
 	{
@@ -760,7 +761,10 @@ struct FluddWeapons : sms::Mod {
 		eng.mod = handle();
 		if (ownShots())
 			info("the weapons' shots made by this mod (the game's water drops and actors)");
-		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { playing = false; });
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent& ev) {
+			const SmsEvStage* st = ev.data && ev.size >= offsetof(SmsEvStage, reason) + sizeof(int) ? (const SmsEvStage*)ev.data : nullptr;
+			playing = st && st->reason == SMS_LEAVE_STATE_LOAD; // (a save state's load: straight into play)
+		});
 		on(SMS_EV_STAGE_START, [this](SmsEvent&) { playing = true; });
 		on<SmsEvTick>(SMS_EV_TICK, [this](SmsEvTick& t) {
 			if (!ownShots())
