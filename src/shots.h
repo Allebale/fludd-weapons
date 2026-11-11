@@ -126,7 +126,7 @@ struct Engine {
 		double ready = 0;          // when the next shot may go
 		double soundUntil = 0;     // the spray's own sound, for a moment after a shot
 		uint32_t bazookaShot = 0;  // its drop in flight, to burst where it lands
-		V bazookaAt;
+		V bazookaAt, bazookaWay;
 		bool bazookaSeen = false;
 		int told = -1;             // the weapon last logged as fired
 	};
@@ -411,7 +411,7 @@ struct Engine {
 			pl.bazookaSeen = false;
 			if (st && st->aim < kBazookaNow && !burstDone(shot)) { // near: at once, not as its drop lands
 				markBurst(shot);
-				burst(player, weapon, shot, pl.bazookaAt, k, s);
+				burst(player, weapon, shot, pl.bazookaAt, k, s, way);
 			}
 		}
 		if (pl.told != weapon) {
@@ -489,7 +489,7 @@ struct Engine {
 						markBurst(shot);
 						players[st->player].bazookaShot = 0;
 						d.alive = 0; // (its drop is done)
-						burst(st->player, BAZOOKA, shot, at, cur(BAZOOKA), curSettings(BAZOOKA));
+						burst(st->player, BAZOOKA, shot, at, cur(BAZOOKA), curSettings(BAZOOKA), way);
 					}
 				} else
 					hitEnemy(st->target, st->player, st->weapon, shot, hl > 1e-3f ? way.x / hl : 0.0f, hl > 1e-3f ? way.z / hl : 0.0f);
@@ -515,6 +515,8 @@ struct Engine {
 			if (!api->water->get(i, &d) || !mine(d.tag) || tagShot(d.tag) != pl.bazookaShot)
 				continue;
 			pl.bazookaAt   = V(d.position);
+			if (!d.landed)
+				pl.bazookaWay = V(d.velocity);
 			pl.bazookaSeen = true;
 			if (d.landed == 1)
 				break; // landed
@@ -524,7 +526,7 @@ struct Engine {
 			return;
 		if (pl.bazookaSeen && !burstDone(pl.bazookaShot)) {
 			markBurst(pl.bazookaShot);
-			burst(player, BAZOOKA, pl.bazookaShot, pl.bazookaAt, k, s);
+			burst(player, BAZOOKA, pl.bazookaShot, pl.bazookaAt, k, s, pl.bazookaWay);
 		}
 		if (pl.bazookaSeen || time > pl.ready)
 			pl.bazookaShot = 0;
@@ -697,8 +699,11 @@ struct Engine {
 		}
 	}
 
-	void burst(int player, int weapon, uint32_t shot, const V& at, const Weapon& k, const Settings& s)
+	// (way: the shot's own way across the ground, for an enemy right in the middle of it)
+	void burst(int player, int weapon, uint32_t shot, const V& at, const Weapon& k, const Settings& s, V way = V())
 	{
+		const float wl = sqrtf(way.x * way.x + way.z * way.z);
+		const float wx = wl > 1e-3f ? way.x / wl : 0.0f, wz = wl > 1e-3f ? way.z / wl : 0.0f;
 		const float r = k.burst;
 		SmsObject seen[96];
 		const SmsVec3 c = at.s();
@@ -713,7 +718,8 @@ struct Engine {
 			if (x * x + z * z > r * r || fabsf(y) > 400.0f) // across the ground, and not far above or below
 				continue;
 			const float l = sqrtf(x * x + z * z);
-			hitEnemy(seen[i], player, weapon, shot, l > 1.0f ? x / l : 0.0f, l > 1.0f ? z / l : 0.0f);
+			// out from the middle; one in the middle (a burst right on it) pushed on the shot's way
+			hitEnemy(seen[i], player, weapon, shot, l > 40.0f ? x / l : wx, l > 40.0f ? z / l : wz);
 			inIt++;
 		}
 		cleanGoop(at, s.goopArea > 0.0f ? 860.0f * s.goopArea : r * 1.2f, s.goop, s.noClean);
@@ -778,7 +784,7 @@ struct Engine {
 		if (k.burst > 0.0f) {
 			if (!burstDone(shot)) { // once a shot, where it first hits an enemy
 				markBurst(shot);
-				burst(player, weapon, shot, V(d.position), k, curSettings(weapon));
+				burst(player, weapon, shot, V(d.position), k, curSettings(weapon), V(d.velocity));
 			}
 			return;
 		}
