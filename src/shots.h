@@ -372,7 +372,8 @@ struct Engine {
 			st->until   = time + 7.0 * (k.every > 0.1f ? k.every : 0.1f);
 			if (weapon == BAZOOKA)
 				pl.bazookaAt = at;
-			api->core->log(mod, SMS_LOG_DEBUG, "the %s aimed at %s %.0f away", kNames[weapon], e ? "an enemy" : "nothing", l);
+			api->core->log(mod, SMS_LOG_INFO, "[diag] the %s (%s) aimed at %s %.0f away", kNames[weapon], inView ? "first person" : "third person",
+			               e ? "an enemy" : "nothing", l);
 		}
 		const float reach = k.straight ? 1.0f : s.range;
 		const float pow   = V(d.velocity).len() * k.pow * (reach > 0.0f ? sqrtf(reach) : 1.0f);
@@ -542,6 +543,9 @@ struct Engine {
 				continue;
 			}
 			const int moved = api->actor->push(h.enemy, h.vx * dt, h.vz * dt);
+			if (moved != 1)
+				api->core->log(mod, SMS_LOG_INFO, "[diag] a shove of %.0f %s", sqrtf(h.vx * h.vx + h.vz * h.vz),
+				               moved == 2 ? "against a wall" : "stopped (the stage's edge)");
 			if (!moved) {
 				h.vx = h.vz = 0.0f; // the stage's edge
 				continue;
@@ -595,6 +599,8 @@ struct Engine {
 			h->vx = dx * k.shove;
 			h->vz = dz * k.shove;
 		}
+		if (fresh)
+			api->core->log(mod, SMS_LOG_INFO, "[diag] %s hit: shove %.0f (walks %d, flags %x)", kNames[weapon], walks ? k.shove : 0.0f, walks ? 1 : 0, f);
 		if (fresh && k.lift > 0.0f && walks) { // thrown into the air: the game's own fall brings it down
 			SmsVec3 v;
 			if (api->actor->velocity(e, &v)) {
