@@ -102,6 +102,7 @@ struct FluddWeapons : sms::Mod {
 
 	RecommendedPreset preset{*this}; // the "Settings preset" row: Recommended (the defaults) or Custom
 	shots::Engine eng; // the shots, hits and bursts (the mod API's water drops and actors)
+	float viewFar = 1.0f; // the long range given the game (game->set_view_distance)
 	bool playing = true; // the stage's opening is over (SMS_EV_STAGE_START): the player has the controls
 	                     // (true as the mod loads: loaded in play)
 	// shots only while the player plays: not in a stage's opening, a cutscene or a talk
@@ -358,6 +359,13 @@ struct FluddWeapons : sms::Mod {
 		return sc > 0 && input().key_down(sc) ? 3 : 2;
 	}
 
+	// long range: how many times further than the game's own enemies are seen and move
+	float farNow() const
+	{
+		const int r = setting("long_range", 5);
+		return kRangeScale[r >= 0 && r < kRangeCount ? r : 0];
+	}
+
 	bool rocketJumpOn() const
 	{
 		const int mode = setting("rocket_jump", 2);
@@ -409,7 +417,16 @@ struct FluddWeapons : sms::Mod {
 			s.burst    = (float)setting(inView && jump ? "bazooka_burst_jump" : inView ? "bazooka_burst" : "bazooka_burst_third", inView ? 130 : 400) / 100.0f;
 			s.push     = (float)setting(inView ? "bazooka_push" : "bazooka_push_third", inView ? 200 : 800) / 100.0f;
 			s.lift     = (float)setting("bazooka_lift", 40) / 100.0f;
+			s.selfJump    = jump ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
+			s.feetForward = (float)setting("rocket_jump_feet", 50) / 100.0f;
+			s.hurt        = setting("rocket_jump_hurt", 1) != 0;
+			s.cry         = setting("rocket_jump_ouch", 1) != 0;
+			s.cryVolume   = (float)setting("rocket_jump_cry_volume", 40) / 100.0f;
+			s.keyLaunch   = keyLaunchNow();
+			s.keyLift     = 30.0f * (float)setting("rocket_key_launch_height", 80) / 100.0f;
+			s.airForward  = setting("bazooka_air_forward", 1) != 0;
 		}
+		s.far = farNow();
 		return s;
 	}
 
@@ -425,12 +442,16 @@ struct FluddWeapons : sms::Mod {
 			lastFar = far;
 		}
 		const int launch = keyLaunchNow(); // (air shots and the rocket jump key's shots, for every weapon)
+		// with this mod's own shots it does the long range, rocket jumps and the key's shots itself
+		const bool own      = ownShots();
+		const float gameFar = own ? 1.0f : far;
+		const int shotLaunch = own ? 0 : launch;
 		const int sh      = setting("shadow_mario", 5);
 		const float boss  = kShadowDamage[sh >= 0 && sh < kShadowCount ? sh : 2];
 		SmsSprayStats ns  = SmsSprayStats(); // FLUDD's own spray: only its time to defeat
 		ns.size           = sizeof ns;
 		ns.every          = (float)setting("normal_defeat_time", 4) / 10.0f;
-		ns.far_scale      = far;
+		ns.far_scale      = gameFar;
 		ns.shadow_damage = boss;
 		ns.key_launch    = launch;
 		h->set_weapon_stats(SMS_SPRAY_NORMAL, &ns);
@@ -449,9 +470,9 @@ struct FluddWeapons : sms::Mod {
 		rf.drop_size     = (float)setting(P().zoomed && inView ? "rifle_blob_scope" : inView ? "rifle_blob" : "rifle_blob_third", P().zoomed && inView ? 20 : 80) / 100.0f;
 		rf.burst         = 1.0f;
 		rf.view_distance = (float)setting("rifle_distance", 50);
-		rf.far_scale     = far;
+		rf.far_scale     = gameFar;
 		rf.shadow_damage = boss;
-		rf.key_launch    = launch;
+		rf.key_launch    = shotLaunch;
 		h->set_weapon_stats(SMS_SPRAY_RIFLE, &rf);
 
 		SmsSprayStats sm = SmsSprayStats(); // the Submachine gun: the Rifle's kind of shot, faster and softer
@@ -465,9 +486,9 @@ struct FluddWeapons : sms::Mod {
 		sm.drop_size     = (float)setting("smg_blob", 20) / 100.0f;
 		sm.burst         = 1.0f;
 		sm.view_distance = (float)setting("smg_distance", 45);
-		sm.far_scale     = far;
+		sm.far_scale     = gameFar;
 		sm.shadow_damage = boss;
-		sm.key_launch    = launch;
+		sm.key_launch    = shotLaunch;
 		h->set_weapon_stats(SMS_SPRAY_SMG, &sm);
 
 		// the Bazooka: a burst where it lands (an older game reads only the stats it knows)
@@ -486,12 +507,12 @@ struct FluddWeapons : sms::Mod {
 		bz.burst         = (float)setting(held && jump ? "bazooka_burst_jump" : held ? "bazooka_burst" : "bazooka_burst_third", held ? 130 : 400) / 100.0f;
 		bz.push          = (float)setting(held ? "bazooka_push" : "bazooka_push_third", held ? 200 : 800) / 100.0f;
 		bz.lift          = (float)setting("bazooka_lift", 40) / 100.0f;
-		bz.self_jump     = jump ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
+		bz.self_jump     = jump && !own ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
 		bz.view_distance = (float)setting("bazooka_distance", 55);
-		bz.far_scale     = far;
+		bz.far_scale     = gameFar;
 		bz.shadow_damage = boss;
 		bz.goop_area     = (float)setting("bazooka_goop_area", 400) / 100.0f;
-		bz.key_launch    = launch;
+		bz.key_launch    = shotLaunch;
 		bz.feet_forward  = (float)setting("rocket_jump_feet", 50) / 100.0f;
 		bz.key_lift      = 30.0f * (float)setting("rocket_key_launch_height", 80) / 100.0f;
 		h->set_weapon_stats(SMS_SPRAY_BAZOOKA, &bz);
@@ -515,7 +536,7 @@ struct FluddWeapons : sms::Mod {
 			gs.hit_size      = (float)setting("goop_wall_life", 15) / 60.0f; // its goop on walls' minutes
 			gs.lift          = g == 2 ? (float)setting("black_goop_air_turn", 30) / 100.0f : 1.0f; // black goop: turning in the air
 			gs.drop_size     = 1.0f;
-			gs.far_scale     = far;  // (the same for every weapon: without it the long range
+			gs.far_scale     = gameFar;  // (the same for every weapon: without it the long range
 			gs.shadow_damage = boss; // and Shadow Mario numbers flipped every frame)
 			gs.water         = setting((key + "_water").c_str(), kWater[g]); // percent of FLUDD's own
 			h->set_weapon_stats(g == 2 ? SMS_SPRAY_BLACK_GOOP : g ? SMS_SPRAY_ELECTRIC_GOOP : SMS_SPRAY_FIRE_GOOP, &gs);
@@ -550,9 +571,9 @@ struct FluddWeapons : sms::Mod {
 			flags = defeat | normal | SMS_SPRAY_THIRD_PERSON | (setting("third_person_models", 1) ? SMS_SPRAY_THIRD_PERSON_MODEL : 0);
 		else if (s.first_person && s.held) // FLUDD's own spray, held in view
 			flags = normal;
-		if (flags && w == SMS_SPRAY_BAZOOKA && setting("bazooka_air_forward", 1))
+		if (flags && w == SMS_SPRAY_BAZOOKA && setting("bazooka_air_forward", 1) && !own)
 			flags |= SMS_SPRAY_AIR_FORWARD; // enemies already in the air pushed on forward, not up
-		if (flags && w == SMS_SPRAY_BAZOOKA && setting("rocket_jump_hurt", 1))
+		if (flags && w == SMS_SPRAY_BAZOOKA && setting("rocket_jump_hurt", 1) && !own)
 			flags |= SMS_SPRAY_ROCKET_HURT | (setting("rocket_jump_ouch", 1) ? SMS_SPRAY_ROCKET_OUCH : 0)
 			         | ((setting("rocket_jump_cry_volume", 40) & 127) << 13); // its volume, in percent
 		if (flags && setting("rocket_jump", 2) != 0 && setting("enemy_hearts", 1)) // with rocket jumps on
@@ -562,7 +583,7 @@ struct FluddWeapons : sms::Mod {
 			if (key)
 				flags |= ((setting(key, w == SMS_SPRAY_BAZOOKA ? 400 : 100) / 10) & 127) << 20;
 		}
-		if (flags && w == SMS_SPRAY_BAZOOKA && muteKeysHeld())
+		if (flags && w == SMS_SPRAY_BAZOOKA && muteKeysHeld() && !own)
 			flags |= 1 << 27; // SMS_SPRAY_MUTE_MARIO: his own voice left out while the keys are held
 		if (flags && w == SMS_SPRAY_BAZOOKA) { // its shot seen flying
 			const int look = setting("bazooka_projectile_look", 2);
@@ -764,8 +785,17 @@ struct FluddWeapons : sms::Mod {
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent& ev) {
 			const SmsEvStage* st = ev.data && ev.size >= offsetof(SmsEvStage, reason) + sizeof(int) ? (const SmsEvStage*)ev.data : nullptr;
 			playing = st && st->reason == SMS_LEAVE_STATE_LOAD; // (a save state's load: straight into play)
+			eng.stageReset();
 		});
 		on(SMS_EV_STAGE_START, [this](SmsEvent&) { playing = true; });
+		// the bazooka with the rocket jump keys held: Mario's own voice (MSD_SE_MA_VO_* to MSD_SE_MV_*)
+		// left out, so his rocket jump's cries play alone
+		on<SmsEvSound>(SMS_EV_SOUND, [this](SmsEvSound& e) -> int {
+			if (!ownShots() || e.id < 0x7800u || e.id > 0x792Fu)
+				return SMS_CONTINUE;
+			For f(*this, 0);
+			return weaponNow() == SMS_SPRAY_BAZOOKA && muteKeysHeld() ? SMS_CANCEL : SMS_CONTINUE;
+		});
 		on<SmsEvTick>(SMS_EV_TICK, [this](SmsEvTick& t) {
 			if (!ownShots())
 				return;
@@ -776,6 +806,16 @@ struct FluddWeapons : sms::Mod {
 				eng.setStats(w, shotSettings(w));
 			eng.followStraight(dt);
 			eng.followShoves(dt);
+			eng.popTick();
+			{
+				For f(*this, 0); // (rocket jumps: player 1's)
+				eng.rocketTick(dt, weaponNow() == SMS_SPRAY_BAZOOKA && muteKeysHeld());
+			}
+			const float far = farNow();
+			if (far != viewFar && SHOTS_HAS(api().game, SmsGameApi, set_view_distance)) {
+				api().game->set_view_distance(far);
+				viewFar = far;
+			}
 			for (int pl = 0; pl < players(); pl++) {
 				For f(*this, pl);
 				const int w = weaponNow();

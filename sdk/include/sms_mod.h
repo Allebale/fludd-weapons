@@ -1161,6 +1161,14 @@ typedef struct SmsGameApi {
 	/* API 1.8: goop washed off the ground and walls within `radius` of a
 	   point, as water washes it (SMS_EV_GOOP_CLEANED hears of it). 1 done. */
 	int (*clean_goop)(const SmsVec3* at, float radius);
+	/* API 1.8: a wall of the stage's map within `radius` of a point (across
+	   the ground): 1 and its way out (across the ground, length 1) into
+	   normal (may be NULL), 0 none. */
+	int (*wall_at)(const SmsVec3* at, float radius, SmsVec3* normal);
+	/* API 1.8: actors (enemies and characters) seen, moving and hit out to
+	   `scale` times the game's own distances, and water drops kept that
+	   much further (1 the game's own). The furthest any mod asks for. */
+	int (*set_view_distance)(float scale);
 } SmsGameApi;
 
 /* game->object_set_color's `which` (API 1.5) */
@@ -1204,6 +1212,10 @@ typedef struct SmsPlayer {
 	/* API 1.5 (check size) */
 	int current_nozzle;  /* the nozzle FLUDD has out now: 0 spray, 3 on Yoshi */
 	int shirt, sunglasses, helmet; /* what he wears (player->set_outfit) */
+	/* API 1.8 (check size) */
+	float gravity;        /* how much faster he falls each tick in a jump (his jump's own) */
+	float intended_yaw;   /* degrees: the way the stick asks him to go (as yaw) */
+	float intended_speed; /* how far the stick is pushed, 0 to 1 */
 } SmsPlayer;
 
 typedef struct SmsPlayerApi {
@@ -1245,6 +1257,9 @@ typedef struct SmsPlayerApi {
 	   Each mod's parts are its own and go when it unloads; the game leaves
 	   out every mod's. 0 when there is no Mario. */
 	int (*set_hidden_parts)(uint32_t parts);
+	/* API 1.8 (check size): where his fall counts from (a landing from no
+	   higher than this never stuns him). */
+	int (*set_fall_start)(float y);
 } SmsPlayerApi;
 
 /* player->set_hidden_parts (API 1.5) */
@@ -1417,6 +1432,11 @@ typedef struct SmsAudioApi {
 	/* API 1.8: one of the game's sound effects (its MSD_SE_* number) played
 	   at a point in the world, as the game's objects play theirs. */
 	void (*play_sound_at)(uint32_t id, const SmsVec3* at);
+	/* API 1.8: a sound clip of the mod's own (16-bit mono PCM, `frames`
+	   long at `rate` a second) played over the game's sound at its effects'
+	   volume, `volume` 1 as recorded. Copied: the mod's memory may go. A
+	   few at once; the oldest makes way. 1 played. */
+	int (*play_clip)(const int16_t* pcm, int frames, int rate, float volume);
 } SmsAudioApi;
 
 /* The game's own objects, for mods built against the decomp's headers with
@@ -2052,6 +2072,10 @@ typedef struct SmsActorApi {
 	   Stus rolling away from water) defeated so, now: 1 done, 0 not one of
 	   those (or already going). */
 	int (*wall_defeat)(SmsObject actor);
+	/* Its model drawn `scale` times its size about its middle (all of it
+	   alike), as it is posed each tick, until set back to 1 or it is gone.
+	   1 done. */
+	int (*set_model_scale)(SmsObject actor, float scale);
 } SmsActorApi;
 
 enum { SMS_SPRAY_NORMAL = 0, SMS_SPRAY_SHOTGUN = 1, SMS_SPRAY_RIFLE = 2, SMS_SPRAY_BAZOOKA = 3, SMS_SPRAY_SMG = 4 };

@@ -9,8 +9,14 @@
 
 namespace shots {
 
+#include "rocket_voices.inc"
+
+// a table of the mod API has this function (an older game's may be shorter)
+#define SHOTS_HAS(t, T, f) ((t) && (t)->size >= offsetof(T, f) + sizeof(void*) && (t)->f)
+
 // the weapons (as the menu's ids: SMS_SPRAY_*'s numbers)
 enum { NORMAL = 0, RIFLE = 2, BAZOOKA = 3, SMG = 4, WEAPONS = 5 };
+const int PIECES = 7; // a drop's tag: the pieces of a popped enemy (they hit nothing)
 const char* const kNames[WEAPONS] = {"FLUDD", "shotgun", "rifle", "bazooka", "submachine gun"};
 
 // the game's numbers this needs (its sounds, particles, messages)
@@ -18,6 +24,10 @@ const uint32_t kSoundNozzle    = 0x0024; // MSD_SE_PO_NORMAL_NOZZLE_IMI: the spr
 const uint32_t kSoundExplosion = 0x081E; // MSD_SE_PO_WFLOWER_EXPLOSION
 const uint32_t kParticleHit    = 0xE7;   // PARTICLE_MS_ENM_WATHIT: water hitting an enemy
 const uint32_t kSprayed        = 0xF;    // HIT_MESSAGE_SPRAYED_BY_WATER
+const uint32_t kSoundWaterHit  = 0x6802; // MSD_SE_EN_COMMON_W_HIT_OK: water hitting an enemy
+const uint32_t kStatusJump     = 0x02000880; // MARIO_STATUS_JUMP
+const uint32_t kStatusWallSlide = 0x000008A7; // MARIO_STATUS_WALL_SLIDE
+const uint32_t kStatusJumping  = 0x800;  // MARIO_STATUS_FLAG_JUMPING: any jump or fall
 
 // a drop's tag: this mod's (its top byte), the player, the weapon, the shot's number
 const uint32_t kMine = 0x5A000000u;
@@ -78,6 +88,14 @@ struct Settings {
 	float goop;   // how much goop it washes off, times the game's own
 	float goopArea; // the bazooka's burst: how far round it washes goop, times 860 (0: the burst's own)
 	bool noClean; // the bazooka's rocket jump keys held: it washes no goop (a black goop run kept)
+	// the bazooka's rocket jumps (first person): how hard its burst throws Mario (0 not), the
+	// push forward off his feet, a point of health each and a cry of his (its volume 0 to 1)
+	float selfJump, feetForward, cryVolume;
+	bool hurt, cry;
+	int keyLaunch;   // 1 the rocket jump key held (hits throw enemies up), 2 hits in the air pop them
+	float keyLift;   // how hard the key's hits throw them up (0: 30)
+	bool airForward; // enemies already in the air pushed on forward, not up
+	float far;       // long range: how much further enemies are seen (1 the game's own)
 };
 
 const float kHitWindow   = 4.0f;     // seconds: shots counted together towards a defeat
@@ -118,8 +136,21 @@ struct Engine {
 		int hits = 0;
 		uint32_t lastShot = 0;
 		double last = 0;
+		double launchUntil = 0; // thrown up by the rocket jump key's hit: kept going up till then
+		float launchUp = 0;
 	};
 	Hit hits[kMostHits];
+
+	// Mario thrown by a rocket jump: steered in the air (as Team Fortress 2's) till he lands
+	bool rocketAir = false;
+	float rocketVX = 0, rocketVZ = 0, rocketTop = 0;
+
+	// enemies popped in the air: their model swells and pops to nothing
+	struct Pop {
+		SmsObject actor = 0;
+		double start = 0;
+	};
+	Pop pops[8];
 
 	// each player's weapon
 	struct Player {
@@ -543,6 +574,17 @@ struct Engine {
 	void followShoves(float dt)
 	{
 		const float keep = powf(kSlow, dt);
+		for (int i = 0; i < kMostHits; i++) { // thrown up by the rocket jump key's hit: off the ground, whatever its own move did
+			Hit& h = hits[i];
+			if (!h.enemy || time >= h.launchUntil || (api->actor->flags(h.enemy) & SMS_ACTOR_FLAG_DEAD))
+				continue;
+			SmsVec3 v;
+			if (api->actor->velocity(h.enemy, &v) && v.y < h.launchUp * 0.8f) {
+				v.y = h.launchUp;
+				api->actor->set_velocity(h.enemy, &v);
+			}
+			api->actor->set_flags(h.enemy, SMS_ACTOR_FLAG_AIRBORNE, 0);
+		}
 		for (int i = 0; i < kMostHits; i++) {
 			Hit& h = hits[i];
 			if (!h.enemy || h.vx * h.vx + h.vz * h.vz < 0.09f)
@@ -589,6 +631,240 @@ struct Engine {
 		}
 	}
 
+	// ---------------------------------------------------------------- rocket jumps, pops
+
+	// The bazooka's burst near Mario (first person, rocket jumps on) throws him, as in Team Fortress 2:
+	// straight away from it (a burst behind him throws him forward), harder nearer; a burst at the
+	// wall beside his feet throws him up it; one at his feet forward faster, the way he goes. He steers
+	// in the air (rocketTick) and the landing never stuns. With hurting on, a point of health and a cry.
+	// (Player 1's: the game's player table is his.)
+	void rocketJump(int player, const V& at, float r, const Settings& s)
+	{
+		if (player != 0 || s.selfJump <= 0.0f || !s.inView)
+			return;
+		SmsPlayer m = SmsPlayer();
+		m.size      = sizeof m;
+		if (!api->player->get(&m) || !m.valid || m.on_yoshi || m.in_water)
+			return;
+		const float reach = r > 400.0f ? r : 400.0f; // far enough to reach him from the ground at a jump's top
+		const V pos(m.position);
+		float dx = pos.x - at.x, dy = pos.y + 60.0f - at.y, dz = pos.z - at.z; // from his middle
+		const float dist = sqrtf(dx * dx + dy * dy + dz * dz);
+		if (dist > reach)
+			return;
+		if (dist > 1.0f)
+			dx /= dist, dy /= dist, dz /= dist;
+		else
+			dx = 0.0f, dy = 1.0f, dz = 0.0f;
+		const bool hasGravity = m.size >= offsetof(SmsPlayer, gravity) + sizeof(float);
+		const float g     = hasGravity && m.gravity > 0.05f ? m.gravity : 0.8f;
+		const float strength = s.selfJump < 4.0f ? s.selfJump : 4.0f;
+		const float speed = sqrtf(2.0f * g * 1500.0f) * (1.0f - 0.5f * dist / reach) * strength; // the rocket nozzle's height, 1500
+		float up          = dy * speed;
+		if (up < speed * 0.3f) // a burst beside or above him still lifts him a little
+			up = speed * 0.3f;
+		// up a wall: firing at its foot (or at the wall below him in the air) throws him straight up it
+		bool wallJump = false;
+		if (at.y < pos.y + 60.0f && SHOTS_HAS(api->game, SmsGameApi, wall_at)) {
+			const float hx = at.x - pos.x, hz = at.z - pos.z;
+			SmsVec3 n;
+			const SmsVec3 waist = V(pos.x, pos.y + 50.0f, pos.z).s();
+			if (hx * hx + hz * hz < 260.0f * 260.0f && api->game->wall_at(&waist, 90.0f, &n)) {
+				const float nl = sqrtf(n.x * n.x + n.z * n.z);
+				if (nl > 0.5f && (hx * n.x + hz * n.z) / nl < 40.0f) { // the burst at the wall's side of him
+					wallJump = true;
+					up = speed * 0.95f;
+					dx = n.x / nl * 0.12f, dz = n.z / nl * 0.12f; // only a little away from it: up it
+				}
+			}
+		}
+		// the way he looks across the ground (the view's)
+		const float face = m.yaw * (3.14159265f / 180.0f);
+		float fx = sinf(face), fz = cosf(face);
+		SmsVec3 eye, look;
+		if (SHOTS_HAS(api->held_fludd, SmsHeldFluddApi, aim) && api->held_fludd->aim(&eye, &look)
+		    && look.x * look.x + look.z * look.z > 0.01f) {
+			const float l = sqrtf(look.x * look.x + look.z * look.z);
+			fx = look.x / l, fz = look.z / l;
+		}
+		const float along = (dx * fx + dz * fz) * speed;                        // its push the way he looks
+		const float sx = dx * speed - along * fx, sz = dz * speed - along * fz; // and to the side
+		// a burst at his feet (near, not in front of him): thrown forward faster, the way he goes
+		float feetX = 0.0f, feetZ = 0.0f;
+		if (s.feetForward > 0.0f && !wallJump && at.y < pos.y + 60.0f) {
+			float gx = sinf(face), gz = cosf(face);
+			if (m.forward_speed < -1.0f) // going backwards: that way
+				gx = -gx, gz = -gz;
+			const float bx = at.x - pos.x, bz = at.z - pos.z;
+			const float hd = sqrtf(bx * bx + bz * bz), kFeet = 220.0f;
+			if (hd < kFeet && bx * gx + bz * gz < 40.0f) { // under him or behind, not in front
+				const float k = speed * s.feetForward * (1.0f - 0.6f * hd / kFeet);
+				feetX = gx * k, feetZ = gz * k;
+			}
+		}
+		const bool inAir = (m.status & kStatusJumping) != 0;
+		if (!inAir || (wallJump && m.status == kStatusWallSlide))
+			api->player->set_status(kStatusJump, 0); // (off a wall slide too: up, not sliding down)
+		// across the ground: the way he goes now and the push
+		const float hx = sinf(face) * m.forward_speed + along * fx + sx + feetX;
+		const float hz = cosf(face) * m.forward_speed + along * fz + sz + feetZ;
+		const float h  = sqrtf(hx * hx + hz * hz);
+		SmsVec3 v = V(hx, (inAir && m.velocity.y > 0.0f ? m.velocity.y : 0.0f) + up, hz).s();
+		api->player->set_velocity(&v);
+		rocketAir = true;
+		rocketVX  = hx, rocketVZ = hz;
+		rocketTop = h > 30.0f ? h : 30.0f;
+		steer(h, hx, hz);
+		if (s.hurt) {
+			api->player->set_health(m.health - 1);
+			if (s.cry && SHOTS_HAS(api->audio, SmsAudioApi, play_clip)) {
+				// one of Allebale's picks at random; low on health (3 or less, as the game's own "danger") a weak one
+				const bool low       = m.health - 1 <= 3;
+				const VoiceClip* set = low ? kLowClips : kHurtClips;
+				const int n          = low ? (int)(sizeof kLowClips / sizeof *kLowClips) : (int)(sizeof kHurtClips / sizeof *kHurtClips);
+				int pick             = (int)(random01() * n);
+				pick                 = pick < n ? pick : n - 1;
+				api->audio->play_clip(set[pick].pcm, set[pick].frames, set[pick].rate, s.cryVolume);
+			}
+		}
+		api->core->log(mod, SMS_LOG_INFO, "rocket jump: %.0f away%s%s%s, up %.1f, across %.1f%s", dist, inAir ? " (in the air)" : "",
+		               wallJump ? " up a wall" : "", feetX != 0.0f || feetZ != 0.0f ? " off the feet" : "", up, h,
+		               s.hurt ? ", 1 health lost" : "");
+	}
+
+	// a new stage: no rocket jump going on, no pops (the game forgets its model sizes too)
+	void stageReset()
+	{
+		rocketAir = false;
+		for (int i = 0; i < 8; i++)
+			pops[i].actor = 0;
+		for (int i = 0; i < kMostHits; i++)
+			hits[i] = Hit();
+	}
+
+	// his facing and forward speed from a speed across the ground
+	void steer(float h, float hx, float hz)
+	{
+		if (h > 0.5f) {
+			api->player->set_yaw(atan2f(hx, hz) * (180.0f / 3.14159265f));
+			api->player->set_forward_speed(h);
+		} else
+			api->player->set_forward_speed(0.0f);
+	}
+
+	// Each tick: Mario up from a rocket jump steers freely (the stick pushes his speed across the ground
+	// its way, never faster than the jump threw him) and his fall counts from where he is. With the
+	// rocket jump keys held (`keys`) he never slides down a wall: he keeps flying as from a jump, so a
+	// burst at the wall below throws him on up it.
+	void rocketTick(float dt, bool keys)
+	{
+		if (!rocketAir && !keys)
+			return;
+		SmsPlayer m = SmsPlayer();
+		m.size      = sizeof m;
+		if (!api->player->get(&m) || !m.valid) {
+			rocketAir = false;
+			return;
+		}
+		if (keys && m.status == kStatusWallSlide) {
+			api->player->set_status(kStatusJump, 0);
+			SmsVec3 v = m.velocity; // (the jump's own push up not added)
+			api->player->set_velocity(&v);
+		}
+		if (!rocketAir)
+			return;
+		if (!(m.status & kStatusJumping) || m.in_water) {
+			rocketAir = false;
+			return;
+		}
+		if (SHOTS_HAS(api->player, SmsPlayerApi, set_fall_start))
+			api->player->set_fall_start(m.position.y);
+		float vx = rocketVX, vz = rocketVZ;
+		const bool hasStick = m.size >= offsetof(SmsPlayer, intended_speed) + sizeof(float);
+		const float mag     = hasStick ? m.intended_speed : 0.0f;
+		if (mag > 0.05f) {
+			const float iy = m.intended_yaw * (3.14159265f / 180.0f);
+			const float wx = sinf(iy), wz = cosf(iy);
+			const float push = 2.4f * mag * dt;
+			vx += wx * push, vz += wz * push;
+			const float v = sqrtf(vx * vx + vz * vz); // and the way it already goes turned towards the stick's
+			if (v > 0.5f) {
+				const float k = 0.12f * mag * dt;
+				vx += (wx * v - vx) * k, vz += (wz * v - vz) * k;
+			}
+		}
+		const float v = sqrtf(vx * vx + vz * vz);
+		if (v > rocketTop)
+			vx *= rocketTop / v, vz *= rocketTop / v;
+		rocketVX = vx, rocketVZ = vz;
+		steer(sqrtf(vx * vx + vz * vz), vx, vz);
+	}
+
+	// An enemy shot in the air pops: water bursts out of it, big blobs fly out like pieces (mostly the
+	// shot's way), a splash, and its model swells and pops to nothing (popTick)
+	void pop(int player, SmsObject e, float dx, float dz)
+	{
+		int slot = 0;
+		for (int i = 0; i < 8; i++)
+			if (pops[i].actor == e || !pops[i].actor) {
+				slot = i;
+				break;
+			}
+		pops[slot].actor = e;
+		pops[slot].start = time;
+		SmsVec3 p;
+		if (!api->game->object_position(e, &p))
+			return;
+		const SmsVec3 mid = V(p.x, p.y + 50.0f, p.z).s();
+		for (int i = 0; i < 3; i++)
+			api->game->particle(kParticleHit, &mid);
+		api->game->splash(&mid, 18.0f);
+		if (SHOTS_HAS(api->audio, SmsAudioApi, play_sound_at))
+			api->audio->play_sound_at(kSoundWaterHit, &mid);
+		SmsWaterDrop base = SmsWaterDrop();
+		base.size         = sizeof base;
+		if (!api->water->nozzle_drop(player, &base))
+			return;
+		SmsWaterDrop d = SmsWaterDrop();
+		d.size         = sizeof d;
+		d.hit_radius   = base.hit_radius;
+		d.hit_height   = base.hit_height;
+		d.alive        = base.alive;
+		d.attack       = 1;
+		d.flags        = 0x40;
+		d.player       = player;
+		d.tag          = tagOf(player, PIECES, nextShot++);
+		for (int i = 0; i < 14; i++) {
+			const float ang = random01() * 6.2831853f, up = 0.35f + 0.55f * random01();
+			const V dir     = V(sinf(ang) * (1.0f - up * 0.5f) + dx * 0.8f, up + 0.3f, cosf(ang) * (1.0f - up * 0.5f) + dz * 0.8f).unit();
+			d.drop_size     = base.drop_size * (2.5f + 4.0f * random01());
+			d.position      = mid;
+			d.velocity      = (dir * (14.0f + 16.0f * random01())).s();
+			api->water->emit(&d);
+		}
+	}
+
+	// the popped enemies' models: swell (1 to 1.35 in 4 30ths of a second), then pop to nothing in 2
+	// more, and stay so till it is gone (5 seconds, then its own size again for its next life)
+	void popTick()
+	{
+		if (!SHOTS_HAS(api->actor, SmsActorApi, set_model_scale))
+			return;
+		for (int i = 0; i < 8; i++) {
+			Pop& p = pops[i];
+			if (!p.actor)
+				continue;
+			const float t = (float)(time - p.start) * 30.0f;
+			if (t > 150.0f) {
+				api->actor->set_model_scale(p.actor, 1.0f);
+				p.actor = 0;
+				continue;
+			}
+			const float k = t < 4.0f ? 1.0f + 0.35f * t / 4.0f : t < 6.0f ? 1.35f * (1.0f - (t - 4.0f) / 2.0f) : 0.0f;
+			api->actor->set_model_scale(p.actor, k > 0.001f ? k : 0.001f);
+		}
+	}
+
 	// ---------------------------------------------------------------- hits
 
 	void hitEnemy(SmsObject e, int player, int weapon, uint32_t shot, float dx, float dz)
@@ -604,26 +880,68 @@ struct Engine {
 		const Settings& s = curSettings(weapon);
 		const bool fresh  = h->lastShot != shot; // this shot's first drop to reach it
 		const bool walks  = (f & SMS_ACTOR_FLAG_WALKS) != 0;
-		if (walks && h->vx * h->vx + h->vz * h->vz < k.shove * k.shove) { // the strongest shove, not their sum
+		const bool inAir  = (f & SMS_ACTOR_FLAG_AIRBORNE) != 0;
+		// the rocket jump key's shots (the bazooka's): one in the air pops (first person), and with the
+		// key held one on the ground is thrown up
+		if ((s.keyLaunch & 3) && walks && weapon == BAZOOKA) {
+			if ((s.keyLaunch & 2) && fresh && s.inView && inAir) {
+				h->lastShot = shot;
+				h->hits     = 0;
+				api->core->log(mod, SMS_LOG_INFO, "an enemy in the air popped by the bazooka");
+				pop(player, e, dx, dz);
+				api->actor->defeat(e);
+				return;
+			}
+			if (s.keyLaunch & 1) {
+				if (!fresh || inAir)
+					return; // the rest of a shot that has done its part: no push
+				h->lastShot    = shot;
+				h->vx = h->vz  = 0.0f; // up: no push along the ground
+				h->launchUntil = time + 0.1;
+				h->launchUp    = s.keyLift > 0.0f ? s.keyLift : 30.0f;
+				SmsVec3 v;
+				if (api->actor->velocity(e, &v)) { // its own speed across the ground kept
+					v.y = h->launchUp;
+					api->actor->set_velocity(e, &v);
+				}
+				api->actor->set_flags(e, SMS_ACTOR_FLAG_AIRBORNE, 0);
+				api->core->log(mod, SMS_LOG_INFO, "an enemy thrown up by the bazooka (rocket jump key held)");
+				return;
+			}
+		}
+		SmsPlayer m = SmsPlayer();
+		m.size      = sizeof m;
+		SmsVec3 ep;
+		if (s.airForward && weapon == BAZOOKA && fresh && walks && inAir && api->player->get(&m) && m.valid
+		    && api->game->object_position(e, &ep)) {
+			// already in the air: pushed on forward, away from Mario, not thrown up again
+			const float fx = ep.x - m.position.x, fz = ep.z - m.position.z, fl = sqrtf(fx * fx + fz * fz);
+			if (fl > 1.0f)
+				dx = fx / fl, dz = fz / fl;
 			h->vx = dx * k.shove;
 			h->vz = dz * k.shove;
+		} else {
+			if (walks && h->vx * h->vx + h->vz * h->vz < k.shove * k.shove) { // the strongest shove, not their sum
+				h->vx = dx * k.shove;
+				h->vz = dz * k.shove;
+			}
+			if (fresh && k.lift > 0.0f && walks) { // thrown into the air: the game's own fall brings it down
+				SmsVec3 v;
+				if (api->actor->velocity(e, &v)) {
+					v.y = k.lift;
+					api->actor->set_velocity(e, &v);
+					api->actor->set_flags(e, SMS_ACTOR_FLAG_AIRBORNE, 0);
+				}
+			}
 		}
 		if (fresh)
 			api->core->log(mod, SMS_LOG_INFO, "[diag] %s hit: shove %.0f (walks %d, flags %x)", kNames[weapon], walks ? k.shove : 0.0f, walks ? 1 : 0, f);
-		if (fresh && k.lift > 0.0f && walks) { // thrown into the air: the game's own fall brings it down
-			SmsVec3 v;
-			if (api->actor->velocity(e, &v)) {
-				v.y = k.lift;
-				api->actor->set_velocity(e, &v);
-				api->actor->set_flags(e, SMS_ACTOR_FLAG_AIRBORNE, 0);
-			}
-		}
 		if (!fresh)
 			return;
 		h->lastShot = shot;
 		if (!s.defeat)
 			return;
-		if (time - h->last > kHitWindow)
+		if (time - h->last > kHitWindow * (s.far > 1.0f ? s.far : 1.0f)) // longer at long range
 			h->hits = 0;
 		h->hits++;
 		h->last = time;
@@ -731,6 +1049,7 @@ struct Engine {
 		}
 		cleanGoop(at, s.goopArea > 0.0f ? 860.0f * s.goopArea : r * 1.2f, s.goop, s.noClean);
 		explode(player, at, r);
+		rocketJump(player, at, r, s);
 		api->core->log(mod, SMS_LOG_INFO, "the bazooka burst at (%.0f, %.0f, %.0f), %d enemies in it", at.x, at.y, at.z, inIt);
 	}
 
@@ -747,6 +1066,8 @@ struct Engine {
 		if (slot < 0 || !api->water->get(slot, &d) || !mine(d.tag))
 			return 0;
 		const int weapon = tagWeapon(d.tag);
+		if (weapon == PIECES)
+			return 1; // a popped enemy's pieces: they push no one
 		const Settings& s = curSettings(weapon);
 		const uint32_t f = api->actor->flags(ev.object);
 		if (s.push < 1.0f && (f & SMS_ACTOR_FLAG_SMALL_ENEMY)) {
@@ -772,6 +1093,8 @@ struct Engine {
 			return;
 		const int weapon  = tagWeapon(d.tag);
 		const int player  = tagPlayer(d.tag);
+		if (weapon == PIECES)
+			return;
 		const uint32_t shot = tagShot(d.tag);
 		if (softened == ev.object) { // the game's push, only that much of it
 			SmsVec3 v;
