@@ -102,6 +102,15 @@ struct FluddWeapons : sms::Mod {
 
 	RecommendedPreset preset{*this}; // the "Settings preset" row: Recommended (the defaults) or Custom
 	shots::Engine eng; // the shots, hits and bursts (the mod API's water drops and actors)
+	bool playing = false; // the stage's opening is over (SMS_EV_STAGE_START): the player has the controls
+	// shots only while the player plays: not in a stage's opening, a cutscene or a talk
+	bool canFire() const
+	{
+		if (!playing)
+			return false;
+		const SmsWorldApi* wd = api().size >= offsetof(SmsApi, world) + sizeof(void*) ? api().world : nullptr;
+		return !(wd && wd->cutscene_playing && wd->cutscene_playing());
+	}
 	// the shots this mod fires itself (a game with api->water and api->actor); else the game's own
 	bool ownShots() const { return eng.ready(); }
 	static bool shotWeapon(int w) { return w == SMS_SPRAY_RIFLE || w == SMS_SPRAY_SMG || w == SMS_SPRAY_BAZOOKA; }
@@ -751,9 +760,12 @@ struct FluddWeapons : sms::Mod {
 		eng.mod = handle();
 		if (ownShots())
 			info("the weapons' shots made by this mod (the game's water drops and actors)");
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { playing = false; });
+		on(SMS_EV_STAGE_START, [this](SmsEvent&) { playing = true; });
 		on<SmsEvTick>(SMS_EV_TICK, [this](SmsEvTick& t) {
 			if (!ownShots())
 				return;
+			const bool fireNow = canFire();
 			const float dt = t.dt * 30.0f; // 30ths of a second
 			eng.time += t.dt;
 			for (int w = 1; w < shots::WEAPONS; w++)
@@ -766,7 +778,7 @@ struct FluddWeapons : sms::Mod {
 				const SmsHeldFluddState s = state();
 				if (shotWeapon(w))
 					eng.setStats(w, shotSettings(w)); // (this player's view: first or third person's numbers)
-				eng.playerTurn(pl, shotWeapon(w) ? w : 0, P().rHeld, s.first_person && s.held,
+				eng.playerTurn(pl, shotWeapon(w) ? w : 0, P().rHeld && fireNow, s.first_person && s.held,
 				               eng.cur(w), eng.curSettings(w));
 			}
 		});
