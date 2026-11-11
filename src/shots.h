@@ -84,6 +84,7 @@ const float kHitWindow   = 4.0f;     // seconds: shots counted together towards 
 const float kSlow        = 0.82f;    // a shove kept each 30th of a second
 const float kBazookaNow  = 900.0f;   // aimed nearer: it bursts there as it fires
 const float kRifleReach  = 60000.0f; // as far as the stage goes
+const float kSmgReach    = 3000.0f;  // the submachine gun's: a middle distance
 const int kMostLanes     = 8;
 const int kMostStraight  = 16;
 const int kMostHits      = 32;
@@ -351,7 +352,7 @@ struct Engine {
 		Straight* st = nullptr;
 		if (k.straight) {
 			V at;
-			const float reachNow = kRifleReach * (s.range < 1.0f ? s.range : 1.0f);
+			const float reachNow = (weapon == SMG ? kSmgReach : kRifleReach) * (s.range < 1.0f ? s.range : 1.0f);
 			SmsObject e = target(eye, f, reachNow, weapon, s.hitSize, &at);
 			const V dv  = at - from;
 			const float l = dv.len();
@@ -364,7 +365,8 @@ struct Engine {
 			st->way     = way;
 			st->reachTo = weapon == BAZOOKA ? l + 200.0f : reachNow;
 			st->aim     = l;
-			st->target  = (l > 3000.0f || weapon == RIFLE) && weapon != BAZOOKA ? e : 0;
+			// what it was aimed at, hit (the bazooka: burst at) as the shot gets there, so it is not missed
+			st->target  = e && (l > 3000.0f || weapon == RIFLE || weapon == BAZOOKA) ? e : 0;
 			st->weapon  = weapon;
 			st->player  = player;
 			st->until   = time + 7.0 * (k.every > 0.1f ? k.every : 0.1f);
@@ -480,11 +482,20 @@ struct Engine {
 				d.position = (st->from + way * (along + extra)).s();
 			if (st->target && along + extra >= st->aim - 100.0f) { // that fast it could pass through: hit as it gets there
 				const float hl = sqrtf(way.x * way.x + way.z * way.z);
-				hitEnemy(st->target, st->player, st->weapon, shot, hl > 1e-3f ? way.x / hl : 0.0f, hl > 1e-3f ? way.z / hl : 0.0f);
+				if (st->weapon == BAZOOKA) { // the bazooka bursts on it
+					V at;
+					if (!burstDone(shot) && middle(st->target, &at, nullptr, nullptr)) {
+						markBurst(shot);
+						players[st->player].bazookaShot = 0;
+						d.alive = 0; // (its drop is done)
+						burst(st->player, BAZOOKA, shot, at, cur(BAZOOKA), curSettings(BAZOOKA));
+					}
+				} else
+					hitEnemy(st->target, st->player, st->weapon, shot, hl > 1e-3f ? way.x / hl : 0.0f, hl > 1e-3f ? way.z / hl : 0.0f);
 				st->target = 0;
 			}
-			if (d.alive < 30)
-				d.alive = 30; // no end to its reach
+			if (d.alive > 0 && d.alive < 30)
+				d.alive = 30; // no end to its reach (0: just burst, done)
 			api->water->set(i, &d);
 		}
 	}
