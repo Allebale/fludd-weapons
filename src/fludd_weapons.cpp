@@ -12,6 +12,7 @@
 // weapon's name. It and the First Person mod read each other through held_fludd's get_state.
 #include <sms_mod.hpp>
 #include "recommended_preset.h"
+#include "shots.h"
 
 // The weapons made for bosses and the bazooka pushing enemies in the air forward (set_weapon's
 // flags): coming in the next game, after SDK 1.7.0; an older game leaves the flags unused
@@ -100,6 +101,10 @@ struct FluddWeapons : sms::Mod {
 	using sms::Mod::Mod;
 
 	RecommendedPreset preset{*this}; // the "Settings preset" row: Recommended (the defaults) or Custom
+	shots::Engine eng; // the shots, hits and bursts (the mod API's water drops and actors)
+	// the shots this mod fires itself (a game with api->water and api->actor); else the game's own
+	bool ownShots() const { return eng.ready(); }
+	static bool shotWeapon(int w) { return w == SMS_SPRAY_RIFLE || w == SMS_SPRAY_SMG || w == SMS_SPRAY_BAZOOKA; }
 
 	// Each player's (co-op: two, each with their own controller; alone, the first)
 	struct Player {
@@ -353,6 +358,46 @@ struct FluddWeapons : sms::Mod {
 		return sc > 0 && input().key_down(sc);
 	}
 
+	// A weapon's numbers from the menu for this mod's own shots (the same sendStats gives the game)
+	shots::Settings shotSettings(int w) const
+	{
+		shots::Settings s = shots::Settings();
+		const SmsHeldFluddState seen = state();
+		const bool inView = seen.first_person && seen.held;
+		s.defeat = setting("weapons_defeat", 1) != 0;
+		s.third  = setting("third_person_weapons", 1) != 0;
+		s.hitSize = 1.0f;
+		s.dropSize = 1.0f;
+		s.range = 1.0f;
+		s.lift = 0.0f;
+		s.burst = 1.0f;
+		if (w == SMS_SPRAY_RIFLE) {
+			s.every    = (float)setting("rifle_rate", 13) / 10.0f;
+			s.push     = (float)setting("rifle_push", 300) / 100.0f;
+			s.toDefeat = setting("rifle_defeat", 2);
+			s.water    = setting("rifle_water", 16);
+			s.hitSize  = (float)setting("rifle_hit", 100) / 100.0f;
+			s.dropSize = (float)setting(P().zoomed && inView ? "rifle_blob_scope" : inView ? "rifle_blob" : "rifle_blob_third", P().zoomed && inView ? 20 : 80) / 100.0f;
+		} else if (w == SMS_SPRAY_SMG) {
+			s.every    = (float)setting("smg_rate", 14) / 100.0f;
+			s.push     = (float)setting("smg_push", 90) / 100.0f;
+			s.toDefeat = setting("smg_defeat", 6);
+			s.water    = setting("smg_water", 16);
+			s.hitSize  = (float)setting("smg_hit", 100) / 100.0f;
+			s.dropSize = (float)setting("smg_blob", 20) / 100.0f;
+		} else if (w == SMS_SPRAY_BAZOOKA) {
+			const bool jump = rocketJumpOn();
+			s.every    = (float)setting("bazooka_rate", 8) / 10.0f;
+			s.range    = (float)setting("bazooka_range", 100) / 100.0f;
+			s.toDefeat = setting("bazooka_defeat", 3);
+			s.water    = setting("bazooka_water", 60);
+			s.burst    = (float)setting(inView && jump ? "bazooka_burst_jump" : inView ? "bazooka_burst" : "bazooka_burst_third", inView ? 130 : 250) / 100.0f;
+			s.push     = (float)setting(inView ? "bazooka_push" : "bazooka_push_third", inView ? 170 : 200) / 100.0f;
+			s.lift     = (float)setting("bazooka_lift", 40) / 100.0f;
+		}
+		return s;
+	}
+
 	// The weapons' numbers from the menu, to the game.
 	void sendStats(const SmsHeldFluddApi* h)
 	{
@@ -479,9 +524,10 @@ struct FluddWeapons : sms::Mod {
 		}
 		const SmsHeldFluddState s = state();
 		const int w               = weaponNow();
-		const int defeat          = (setting("weapons_defeat", 1) ? SMS_SPRAY_DEFEAT : 0) | (P().rHeld ? 2 : 0)
+		const bool own            = ownShots() && shotWeapon(w); // this mod fires it (the game only shows it)
+		const int defeat          = (setting("weapons_defeat", 1) ? SMS_SPRAY_DEFEAT : 0) | (P().rHeld && !own ? 2 : 0)
 		                 | (setting("boss_balance", 1) ? SMS_SPRAY_BOSSES : 0);
-		const int normal          = setting("normal_defeat", 0) ? SMS_SPRAY_DEFEAT_NORMAL : 0;
+		const int normal          = setting("normal_defeat", 0) && !own ? SMS_SPRAY_DEFEAT_NORMAL : 0;
 		int flags                 = 0;
 		if (w && s.first_person)
 			flags = defeat | normal;
@@ -693,6 +739,43 @@ struct FluddWeapons : sms::Mod {
 				For w(*this, pl);
 				padRead(r.pads[pl]);
 			}
+		});
+
+		// this mod's own shots (a game with the mod API's water drops and actors)
+		eng.api = &api();
+		eng.mod = handle();
+		if (ownShots())
+			info("the weapons' shots made by this mod (the game's water drops and actors)");
+		on<SmsEvTick>(SMS_EV_TICK, [this](SmsEvTick& t) {
+			if (!ownShots())
+				return;
+			const float dt = t.dt * 30.0f; // 30ths of a second
+			eng.time += t.dt;
+			for (int w = 1; w < shots::WEAPONS; w++)
+				eng.setStats(w, shotSettings(w));
+			eng.followStraight(dt);
+			eng.followShoves(dt);
+			for (int pl = 0; pl < players(); pl++) {
+				For f(*this, pl);
+				const int w = weaponNow();
+				const SmsHeldFluddState s = state();
+				if (shotWeapon(w))
+					eng.setStats(w, shotSettings(w)); // (this player's view: first or third person's numbers)
+				eng.playerTurn(pl, shotWeapon(w) ? w : 0, P().rHeld, s.first_person && s.held,
+				               eng.cur(w), eng.curSettings(w));
+			}
+		});
+		// a player's FLUDD about to spray while a weapon of this mod's fires: none of its own stream
+		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int {
+			if (!ownShots() || e.player < 0 || e.player >= players())
+				return SMS_CONTINUE;
+			For f(*this, e.player);
+			return shotWeapon(weaponNow()) ? SMS_CANCEL : SMS_CONTINUE;
+		});
+		on<SmsEvHit>(SMS_EV_OBJECT_HIT, [this](SmsEvHit& e) -> int { return ownShots() ? eng.onHit(e) : SMS_CONTINUE; });
+		on<SmsEvHitDone>(SMS_EV_OBJECT_HIT_DONE, [this](SmsEvHitDone& e) {
+			if (ownShots())
+				eng.onHitDone(e);
 		});
 
 		on<SmsEvCamera>(SMS_EV_CAMERA, [this](SmsEvCamera&) {
