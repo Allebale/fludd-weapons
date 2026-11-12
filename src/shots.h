@@ -254,6 +254,28 @@ struct Engine {
 
 	// ---------------------------------------------------------------- aiming
 
+	// Shadow Mario and Proto Piranha in the stage (looked for once a second among all its actors:
+	// a stage has more than any short list round the view holds)
+	SmsObject specials[8];
+	int specialCount  = 0;
+	double specialsAt = -10.0;
+	SmsObject everyone[1024];
+	void refreshSpecials(const V& eye)
+	{
+		if (time - specialsAt < 1.0)
+			return;
+		specialsAt      = time;
+		specialCount    = 0;
+		const SmsVec3 e = eye.s();
+		int n           = api->actor->near(&e, 1.0e7f, 0, everyone, 1024);
+		n               = n < 1024 ? n : 1024;
+		for (int i = 0; i < n && specialCount < 8; i++) {
+			const int kd = api->actor->kind(everyone[i]);
+			if (kd == SMS_KIND_SHADOW_MARIO || kd == SMS_KIND_PROTO_PIRANHA)
+				specials[specialCount++] = everyone[i];
+		}
+	}
+
 	// Where along the view's line an enemy is (-1 not on it): within a good deal more than its own
 	// size (the rifle's grows with its hit size), so it is easy to hit
 	float alongRay(const V& eye, const V& f, SmsObject a, float most, float hitScale, bool rifle)
@@ -300,10 +322,9 @@ struct Engine {
 		}
 		// Shadow Mario (his hitbox three times as big) and Proto Piranha
 		if (hasKinds()) {
-			SmsObject all[128];
-			int m = api->actor->near(&e, reach + 1000.0f, 0, all, 128);
-			m     = m < 128 ? m : 128;
-			for (int i = 0; i < m; i++) {
+			refreshSpecials(eye);
+			for (int i = 0; i < specialCount; i++) {
+				SmsObject* all = specials;
 				const int kd = api->actor->kind(all[i]);
 				SmsWaterMeter wm;
 				if ((kd != SMS_KIND_SHADOW_MARIO && kd != SMS_KIND_PROTO_PIRANHA) || !meter(all[i], &wm) || !wm.open)
@@ -433,7 +454,8 @@ struct Engine {
 			st->reachTo = weapon == BAZOOKA ? l + 200.0f : reachNow;
 			st->aim     = l;
 			// what it was aimed at, hit (the bazooka: burst at) as the shot gets there, so it is not missed
-			st->target  = e && (l > 3000.0f || weapon == RIFLE || weapon == BAZOOKA) ? e : 0;
+			// (Shadow Mario, Proto Piranha: always, their drops' hit areas are small)
+			st->target  = e && (l > 3000.0f || weapon == RIFLE || weapon == BAZOOKA || kindOf(e) != SMS_KIND_SMALL_ENEMY) ? e : 0;
 			st->weapon  = weapon;
 			st->player  = player;
 			st->until   = time + 7.0 * (k.every > 0.1f ? k.every : 0.1f);
@@ -1117,7 +1139,9 @@ struct Engine {
 	// a new stage: no rocket jump going on, no pops (the game forgets its model sizes too)
 	void stageReset()
 	{
-		rocketAir = false;
+		rocketAir    = false;
+		specialCount = 0;
+		specialsAt   = -10.0;
 		for (int i = 0; i < 8; i++)
 			pops[i].actor = 0;
 		for (int i = 0; i < kMostHits; i++)
