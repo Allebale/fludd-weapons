@@ -95,6 +95,7 @@ struct Settings {
 	int keyLaunch;   // 1 the rocket jump key held (hits throw enemies up), 2 hits in the air pop them
 	float keyLift;   // how hard the key's hits throw them up (0: 30)
 	bool airForward; // enemies already in the air pushed on forward, not up
+	bool enemySafe;  // the rocket jump key held: a burst that hits an enemy costs Mario no health
 	float far;       // long range: how much further enemies are seen (1 the game's own)
 };
 
@@ -640,7 +641,7 @@ struct Engine {
 	// wall beside his feet throws him up it; one at his feet forward faster, the way he goes. He steers
 	// in the air (rocketTick) and the landing never stuns. With hurting on, a point of health and a cry.
 	// (Player 1's: the game's player table is his.)
-	void rocketJump(int player, const V& at, float r, const Settings& s)
+	void rocketJump(int player, const V& at, float r, const Settings& s, bool noHurt)
 	{
 		if (player != 0 || s.selfJump <= 0.0f || !s.inView)
 			return;
@@ -717,7 +718,7 @@ struct Engine {
 		rocketVX  = hx, rocketVZ = hz;
 		rocketTop = h > 30.0f ? h : 30.0f;
 		steer(h, hx, hz);
-		if (s.hurt) {
+		if (s.hurt && !noHurt) {
 			api->player->set_health(m.health - 1);
 			if (s.cry && SHOTS_HAS(api->audio, SmsAudioApi, play_clip)) {
 				// one of Allebale's picks at random; low on health (3 or less, as the game's own "danger") a weak one
@@ -731,7 +732,7 @@ struct Engine {
 		}
 		api->core->log(mod, SMS_LOG_INFO, "rocket jump: %.0f away%s%s%s, up %.1f, across %.1f%s", dist, inAir ? " (in the air)" : "",
 		               wallJump ? " up a wall" : "", feetX != 0.0f || feetZ != 0.0f ? " off the feet" : "", up, h,
-		               s.hurt ? ", 1 health lost" : "");
+		               s.hurt && !noHurt ? ", 1 health lost" : noHurt ? ", no health lost (an enemy hit)" : "");
 	}
 
 	// a new stage: no rocket jump going on, no pops (the game forgets its model sizes too)
@@ -1052,7 +1053,7 @@ struct Engine {
 		}
 		cleanGoop(at, s.goopArea > 0.0f ? 860.0f * s.goopArea : r * 1.2f, s.goop, s.noClean);
 		explode(player, at, r);
-		rocketJump(player, at, r, s);
+		rocketJump(player, at, r, s, s.enemySafe && inIt > 0);
 		api->core->log(mod, SMS_LOG_INFO, "the bazooka burst at (%.0f, %.0f, %.0f), %d enemies in it", at.x, at.y, at.z, inIt);
 	}
 

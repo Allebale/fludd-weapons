@@ -367,6 +367,19 @@ struct FluddWeapons : sms::Mod {
 		return kRangeScale[r >= 0 && r < kRangeCount ? r : 0];
 	}
 
+	// the rocket jump key held now (the keyboard's: player 1's) or a controller's L
+	bool rocketKeyHeld() const
+	{
+		const SmsPad p = pad(cur);
+		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
+			return true;
+		if (cur != 0)
+			return false;
+		const int k  = setting("rocket_jump_key", 1);
+		const int sc = input().key_from_name(kRocketKeys[k >= 0 && k < kRocketKeyCount ? k : 0]);
+		return sc > 0 && input().key_down(sc);
+	}
+
 	bool rocketJumpOn() const
 	{
 		const int mode = setting("rocket_jump", 2);
@@ -424,6 +437,7 @@ struct FluddWeapons : sms::Mod {
 			s.cry         = setting("rocket_jump_ouch", 1) != 0;
 			s.cryVolume   = (float)setting("rocket_jump_cry_volume", 40) / 100.0f;
 			s.keyLaunch   = keyLaunchNow();
+			s.enemySafe   = setting("rocket_jump_enemy_safe", 0) && rocketKeyHeld();
 			s.keyLift     = 30.0f * (float)setting("rocket_key_launch_height", 80) / 100.0f;
 			s.airForward  = setting("bazooka_air_forward", 1) != 0;
 		}
@@ -721,6 +735,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionChoice("rocket_jump_key", "Rocket jump key",
 		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 1);
 		preset.optionBool("rocket_jump_hurt", "Rocket jumps cost Mario 1 health", true);
+		preset.optionBool("rocket_jump_enemy_safe", "No rocket jump damage when a key shot hits an enemy", false);
 		preset.optionBool("rocket_jump_ouch", "Mario cries out when a rocket jump hurts", true);
 		preset.optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 40, 1, 100, 1);
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
