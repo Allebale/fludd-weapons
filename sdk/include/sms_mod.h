@@ -1293,6 +1293,10 @@ typedef struct SmsPlayerApi {
 	/* (API 1.8; check size) Burnt as by the game's fire goop: thrown up holding his bottom, a point of
 	   health (unless he is already burning or blinking). 1 when he starts burning. */
 	int (*burn)(void);
+	/* (API 1.8; check size) Takes points of health the game's own way, so
+	   reaching 0 loses a life. Under water it takes air instead. 0 when there
+	   is no Mario. */
+	int (*hurt)(int points);
 } SmsPlayerApi;
 
 /* player->set_hidden_parts (API 1.5) */

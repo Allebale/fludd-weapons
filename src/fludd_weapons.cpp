@@ -365,6 +365,8 @@ struct FluddWeapons : sms::Mod {
 		const int which = w == W_RIFLE ? 0 : w == W_BAZOOKA ? 1 : w == W_SMG ? 2 : -1;
 		if (which < 0)
 			return;
+		if (!canFire()) // a stage's opening or a cutscene: the game's own FLUDD, as it poses him there
+			return;
 		SmsPlayer m = SmsPlayer();
 		m.size      = sizeof m;
 		if (!a.player->get(&m) || !m.valid)

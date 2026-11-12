@@ -1477,7 +1477,10 @@ struct Engine {
 		rocketTop = h > 30.0f ? h : 30.0f;
 		steer(h, hx, hz);
 		if (s.hurt && !noHurt) {
-			api->player->set_health(m.health - 1);
+			if (SHOTS_HAS(api->player, SmsPlayerApi, hurt))
+				api->player->hurt(1); // the game's own damage: at 0 he loses a life
+			else
+				api->player->set_health(m.health - 1);
 			if (s.cry && SHOTS_HAS(api->audio, SmsAudioApi, play_clip)) {
 				// one of Allebale's picks at random; low on health (3 or less, as the game's own "danger") a weak one
 				const bool low       = m.health - 1 <= 3;
