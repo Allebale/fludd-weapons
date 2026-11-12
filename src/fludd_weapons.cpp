@@ -441,7 +441,10 @@ struct FluddWeapons : sms::Mod {
 			s.keyLift     = 30.0f * (float)setting("rocket_key_launch_height", 80) / 100.0f;
 			s.airForward  = setting("bazooka_air_forward", 1) != 0;
 		}
-		s.far = farNow();
+		s.far    = farNow();
+		s.bosses = setting("boss_balance", 1) != 0;
+		const int sh   = setting("shadow_mario", 5);
+		s.shadowDamage = kShadowDamage[sh >= 0 && sh < kShadowCount ? sh : 2];
 		return s;
 	}
 
@@ -824,6 +827,7 @@ struct FluddWeapons : sms::Mod {
 			eng.followStraight(dt);
 			eng.followShoves(dt);
 			eng.popTick();
+			eng.chompTick();
 			{
 				For f(*this, 0); // (rocket jumps: player 1's)
 				eng.rocketTick(dt, weaponNow() == SMS_SPRAY_BAZOOKA && muteKeysHeld());

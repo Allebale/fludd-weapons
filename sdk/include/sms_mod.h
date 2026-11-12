@@ -2042,6 +2042,8 @@ typedef struct SmsWaterApi {
 #define SMS_ACTOR_FLAG_SMALL_ENEMY 16u /* one of the stage's small enemies (that the game defeats as a stomp) */
 #define SMS_ACTOR_FLAG_CHARACTER 32u   /* a friendly character (a Pianta, a Noki) */
 
+typedef struct SmsWaterMeter SmsWaterMeter; /* (API 1.8, below) */
+
 typedef struct SmsActorApi {
 	uint32_t size;
 	/* Its speed, units a tick. 0: not an actor that moves. */
@@ -2076,7 +2078,60 @@ typedef struct SmsActorApi {
 	   alike), as it is posed each tick, until set back to 1 or it is gone.
 	   1 done. */
 	int (*set_model_scale)(SmsObject actor, float scale);
+	/* (API 1.8; check size) What a game object is: SMS_KIND_* (SMS_KIND_OTHER for anything else). */
+	int (*kind)(SmsObject object);
+	/* The boss or actor a hit part belongs to (Big Chain Chomp's body, Petey Piranha's head, a
+	   Phantamanta's wing, Proto Piranha's mouth, an Eely-Mouth tooth's Eely-Mouth); the object
+	   itself when it is no part. */
+	SmsObject (*owner)(SmsObject part);
+	/* Its hit parts (Eely-Mouth's teeth, Petey Piranha's head, Proto Piranha's mouth) into out
+	   (up to `most`); returns how many there are. */
+	int (*parts)(SmsObject object, SmsObject* out, int most);
+	/* How much water it still takes before it is beaten (SmsWaterMeter): Shadow Mario's meter,
+	   Big Chain Chomp's heat, a Phantamanta's hits, a tooth's dirt, Petey Piranha's thirst, Proto
+	   Piranha's sleep or its open mouth, a character's goop, a hiding picture's washing. 1 when
+	   it has one, 0 not. */
+	int (*water_meter)(SmsObject object, SmsWaterMeter* out);
+	/* Its meter set to `left` (0 beats it, as the game's own water would). `effects` 1: with the
+	   game's own sound and sparkle as water takes it down (a cleaned tooth, a cooled Chomp); 0
+	   quietly (as when the game's own drop hits it next, taking one more off itself). 1 done. */
+	int (*set_water_meter)(SmsObject object, int left, int effects);
+	/* Ticks till it takes water again (a Phantamanta's, a tooth's wait between hits) set: 1 done. */
+	int (*set_water_wait)(SmsObject object, int ticks);
+	/* Knocked as by a blast pushing `push` (units a tick): a ball or a fruit thrown that way and up
+	   (a fruit off its tree too), a tree's leaves swaying (by its length). 1 done, 0 not one of
+	   those or not now (held, appearing, rotting). */
+	int (*knock)(SmsObject object, const SmsVec3* push);
 } SmsActorApi;
+
+/* actor->kind (API 1.8) */
+enum {
+	SMS_KIND_OTHER = 0,
+	SMS_KIND_SMALL_ENEMY = 1,
+	SMS_KIND_CHARACTER = 2,       /* a friendly character (a Pianta, a Noki) */
+	SMS_KIND_SHADOW_MARIO = 3,
+	SMS_KIND_BIG_CHAIN_CHOMP = 4, /* or a part of its body */
+	SMS_KIND_PHANTAMANTA = 5,     /* or a wing */
+	SMS_KIND_EELY_MOUTH = 6,
+	SMS_KIND_EELY_MOUTH_TOOTH = 7,
+	SMS_KIND_PROTO_PIRANHA = 8,   /* or its mouth */
+	SMS_KIND_PETEY_PIRANHA = 9,   /* or his head */
+	SMS_KIND_HIDING_PICTURE = 10, /* a picture water washes off to find what it hides (a red X, an M) */
+	SMS_KIND_BALL = 11,           /* a ball or a fruit */
+	SMS_KIND_TREE = 12
+};
+
+/* actor->water_meter (API 1.8). Set `size` to sizeof before calling. */
+struct SmsWaterMeter {
+	uint32_t size;
+	int left, most; /* water still to take (0 beaten), of `most` */
+	int open;       /* 1 it takes water now (Shadow Mario running his race, Petey's mouth open, a tooth
+	                   not between hits, a character not talking); 0 not */
+	int wait;       /* ticks till it takes water again (0 now) */
+	SmsVec3 spot;   /* where the water must reach (Shadow Mario's middle, Petey's or Proto Piranha's
+	                   open mouth, its goop pile) */
+	float spot_radius;
+};
 
 enum { SMS_SPRAY_NORMAL = 0, SMS_SPRAY_SHOTGUN = 1, SMS_SPRAY_RIFLE = 2, SMS_SPRAY_BAZOOKA = 3, SMS_SPRAY_SMG = 4 };
 /* The goop weapons: FLUDD sprays as ever (its own model, pump and water), its stream fire goop,

@@ -95,6 +95,8 @@ struct Settings {
 	int keyLaunch;   // 1 the rocket jump key held (hits throw enemies up), 2 hits in the air pop them
 	float keyLift;   // how hard the key's hits throw them up (0: 30)
 	bool airForward; // enemies already in the air pushed on forward, not up
+	bool bosses;     // the weapons made for bosses (Shadow Mario, Petey Piranha, Big Chain Chomp...)
+	float shadowDamage; // how much harder (above 1) or softer each hit is on Shadow Mario
 	bool enemySafe;  // the rocket jump key held: a burst that hits an enemy costs Mario no health
 	float far;       // long range: how much further enemies are seen (1 the game's own)
 };
@@ -104,6 +106,7 @@ const float kSlow        = 0.82f;    // a shove kept each 30th of a second
 const float kBazookaNow  = 900.0f;   // aimed nearer: it bursts there as it fires
 const float kRifleReach  = 60000.0f; // as far as the stage goes
 const float kSmgReach    = 3000.0f;  // the submachine gun's: a middle distance
+const float kShadowHitbox = 3.0f;    // the weapons' aim and bursts: Shadow Mario this many times as big
 const int kMostLanes     = 8;
 const int kMostStraight  = 16;
 const int kMostHits      = 32;
@@ -225,6 +228,17 @@ struct Engine {
 	// an actor's middle, and how far round and high it is hit
 	bool middle(SmsObject a, V* mid, float* radius, float* height)
 	{
+		SmsWaterMeter wm;
+		const int kd = kindOf(a);
+		if ((kd == SMS_KIND_SHADOW_MARIO || kd == SMS_KIND_PROTO_PIRANHA) && meter(a, &wm)) { // where water must go
+			if (mid)
+				*mid = V(wm.spot);
+			if (radius)
+				*radius = wm.spot_radius;
+			if (height)
+				*height = wm.spot_radius * 2.0f;
+			return true;
+		}
 		SmsVec3 p;
 		float r = 0, h = 0;
 		if (!api->game->object_position(a, &p) || !api->actor->hit_size(a, &r, &h))
@@ -283,6 +297,27 @@ struct Engine {
 			const float t = alongRay(eye, f, seen[i], bestT, hitScale, weapon == RIFLE);
 			if (t >= 0.0f && t < bestT)
 				bestT = t, best = seen[i];
+		}
+		// Shadow Mario (his hitbox three times as big) and Proto Piranha
+		if (hasKinds()) {
+			SmsObject all[128];
+			int m = api->actor->near(&e, reach + 1000.0f, 0, all, 128);
+			m     = m < 128 ? m : 128;
+			for (int i = 0; i < m; i++) {
+				const int kd = api->actor->kind(all[i]);
+				SmsWaterMeter wm;
+				if ((kd != SMS_KIND_SHADOW_MARIO && kd != SMS_KIND_PROTO_PIRANHA) || !meter(all[i], &wm) || !wm.open)
+					continue;
+				// (Proto Piranha: its open mouth only itself; asleep, its goop pile two and a half times as big)
+				const float rad = kd == SMS_KIND_SHADOW_MARIO ? wm.spot_radius * kShadowHitbox
+				                  : wm.most == 1             ? wm.spot_radius
+				                                             : wm.spot_radius * 2.5f;
+				const V c       = V(wm.spot) - eye;
+				const float t   = c.dot(f);
+				const V off     = c - f * t;
+				if (t > 0.0f && t < bestT && off.dot(off) <= rad * rad)
+					bestT = t, best = all[i];
+			}
 		}
 		*at = eye + f * bestT;
 		if (weapon != RIFLE)
@@ -523,6 +558,8 @@ struct Engine {
 						d.alive = 0; // (its drop is done)
 						burst(st->player, BAZOOKA, shot, at, cur(BAZOOKA), curSettings(BAZOOKA), way);
 					}
+				} else if (kindOf(st->target) != SMS_KIND_SMALL_ENEMY) {
+					hitTarget(st->target, st->player, st->weapon, shot); // Shadow Mario, Proto Piranha
 				} else {
 					// very near (the drop set off inside it) or far (that fast it went through): the
 					// drop never reached it as the game sees it, so the game's own water hit (its own
@@ -632,6 +669,351 @@ struct Engine {
 			if (api->water->nozzle_drop(player, &d) && api->audio->size >= offsetof(SmsAudioApi, play_sound_at) + sizeof(void*))
 				api->audio->play_sound_at(kSoundNozzle, &d.position);
 		}
+	}
+
+	// ---------------------------------------------------------------- bosses, characters, things
+
+	bool hasKinds() const { return SHOTS_HAS(api->actor, SmsActorApi, knock); }
+	int kindOf(SmsObject o) const
+	{
+		if (hasKinds())
+			return api->actor->kind(o);
+		return (api->actor->flags(o) & SMS_ACTOR_FLAG_SMALL_ENEMY) ? SMS_KIND_SMALL_ENEMY : SMS_KIND_OTHER;
+	}
+	bool meter(SmsObject o, SmsWaterMeter* m)
+	{
+		*m      = SmsWaterMeter();
+		m->size = sizeof *m;
+		return hasKinds() && api->actor->water_meter(o, m);
+	}
+	void setMeter(SmsObject o, int left, bool effects) { api->actor->set_water_meter(o, left > 0 ? left : 0, effects ? 1 : 0); }
+
+	// what a shot has already done to each (once a shot)
+	struct Once {
+		SmsObject object = 0;
+		uint32_t shot = 0;
+		double at = 0;
+	};
+	Once onces[32];
+	int nextOnce = 0;
+	bool firstTime(SmsObject o, uint32_t shot)
+	{
+		for (int i = 0; i < 32; i++)
+			if (onces[i].object == o && onces[i].shot == shot && time - onces[i].at < 3.0)
+				return false;
+		Once& k  = onces[nextOnce++ % 32];
+		k.object = o, k.shot = shot, k.at = time;
+		return true;
+	}
+	// parts of a point carried to the next shot (a boss's share by shots that do not divide it)
+	struct Owed {
+		SmsObject object = 0;
+		float owed = 0;
+	};
+	Owed oweds[8];
+	int nextOwed = 0;
+	float& owedOf(SmsObject o)
+	{
+		for (int i = 0; i < 8; i++)
+			if (oweds[i].object == o)
+				return oweds[i].owed;
+		Owed& k  = oweds[nextOwed++ % 8];
+		k.object = o, k.owed = 0.0f;
+		return k.owed;
+	}
+	// a share of `most` taken by one of `shots` shots
+	int share(SmsObject o, int most, float shots)
+	{
+		float& owed     = owedOf(o);
+		const float sh  = (float)most / (shots > 0.01f ? shots : 1.0f) + owed;
+		const int whole = (int)(sh + 0.001f);
+		owed            = sh - (float)whole;
+		return whole;
+	}
+
+	// a character's or Petey Piranha's water just before the game's own drop reaches it
+	SmsObject before = 0;
+	int beforeLeft   = 0;
+	// Big Chain Chomp being cooled: its heat not coming back while it is shot (2 seconds)
+	SmsObject chomp = 0;
+	int chompLeft   = 0;
+	double chompAt  = 0;
+	uint32_t chompShot = 0;
+
+	// shots to beat each: a tooth (the submachine gun's: a second of firing), Big Chain Chomp
+	float toothShots(int weapon) const
+	{
+		if (weapon == SMG) {
+			const float every = cur(SMG).every > 0.01f ? cur(SMG).every : 0.14f;
+			const float n     = floorf(1.0f / every + 0.5f);
+			return n > 1.0f ? n : 1.0f;
+		}
+		return weapon == RIFLE || weapon == BAZOOKA ? 1.0f : 0.0f;
+	}
+	static float chompShots(int weapon) { return weapon == RIFLE ? 3.0f : weapon == BAZOOKA ? 1.0f : weapon == SMG ? 42.0f : 0.0f; }
+	// a character's goop each shot washes (thousandths): FLUDD's own bursts' worth
+	static int washOf(int weapon) { return weapon == RIFLE ? 500 : weapon == BAZOOKA ? 1000 : weapon == SMG ? 24 : 0; }
+	static float shadowShare(int weapon) { return weapon == RIFLE ? 0.34f : weapon == BAZOOKA ? 0.5f : weapon == SMG ? 0.1f : 0.0f; }
+
+	// Shadow Mario wetted by a shot: the weapon's share of his water (the game took one itself)
+	void shadowHit(SmsObject o, int weapon, uint32_t shot, bool gameCounted)
+	{
+		SmsWaterMeter m;
+		const Settings& s = curSettings(weapon);
+		if (!meter(o, &m) || !m.open || !firstTime(api->actor->owner(o), shot))
+			return;
+		const int take = (int)((float)m.most * shadowShare(weapon) * s.shadowDamage + 0.5f) - (gameCounted ? 1 : 0);
+		if (take < 1)
+			return;
+		setMeter(o, m.left - take, true);
+		api->core->log(mod, SMS_LOG_INFO, "Shadow Mario hit by the %s: %d of his %d water left", kNames[weapon],
+		               m.left - take > 0 ? m.left - take : 0, m.most);
+	}
+
+	// a tooth's share of cleaning for a shot; `now`: no drop of the game's follows (a burst)
+	void toothHit(SmsObject o, int weapon, uint32_t shot, bool now)
+	{
+		SmsWaterMeter m;
+		if (toothShots(weapon) <= 0.0f || !meter(o, &m) || !m.open || !firstTime(o, shot))
+			return;
+		int take       = share(o, m.most, toothShots(weapon));
+		take           = take > 1 ? take : 1;
+		const int left = m.left - take > 0 ? m.left - take : 0;
+		setMeter(o, now ? left : left + 1, now); // (else the game's own hit takes the last)
+		api->core->log(mod, SMS_LOG_INFO, "Eely-Mouth's tooth hit by the %s: %d of %d left", kNames[weapon], left, m.most);
+	}
+
+	// Big Chain Chomp's share of cooling for a shot. `gameNext`: the game's own drop takes one off itself next
+	void chompHit(SmsObject o, int weapon, uint32_t shot, bool gameNext)
+	{
+		SmsWaterMeter m;
+		const SmsObject c = api->actor->owner(o);
+		if (chompShots(weapon) <= 0.0f || !meter(c, &m) || !m.open)
+			return;
+		if (c == chomp && shot == chompShot && time - chompAt < 3.0) { // its other drops: the game's own taken back
+			if (gameNext)
+				setMeter(c, m.left + 1, false);
+			return;
+		}
+		int whole = share(c, m.most, chompShots(weapon));
+		if (whole < 1 && weapon == BAZOOKA)
+			whole = m.most;
+		const int left = m.left - whole > 0 ? m.left - whole : 0;
+		chomp = c, chompLeft = left, chompAt = time, chompShot = shot;
+		if (left == 0)
+			owedOf(c) = 0.0f;
+		setMeter(c, gameNext ? left + 1 : left, !gameNext);
+		api->core->log(mod, SMS_LOG_INFO, "Big Chain Chomp hit by the %s: %d of its %d heat left", kNames[weapon], left, m.most);
+	}
+
+	// each tick: Chomp's heat not coming back while it is being shot
+	void chompTick()
+	{
+		SmsWaterMeter m;
+		if (!chomp || time - chompAt > 2.0 || !meter(chomp, &m))
+			return;
+		if (m.left > chompLeft && chompLeft > 0)
+			setMeter(chomp, chompLeft, false);
+		else if (m.left < chompLeft)
+			chompLeft = m.left; // (the normal spray too)
+	}
+
+	// A shot got to what it was aimed at, a boss part no drop meets (far away, or Shadow Mario, who
+	// runs too fast): Shadow Mario wetted (the game's own count, then the weapon's share), Proto
+	// Piranha's mouth or pile hit
+	void hitTarget(SmsObject o, int player, int weapon, uint32_t shot)
+	{
+		(void)player;
+		const int kd = kindOf(o);
+		if (kd == SMS_KIND_SHADOW_MARIO) {
+			SmsWaterMeter m;
+			if (!meter(o, &m) || !m.open)
+				return;
+			for (int i = 0; i < 32; i++)
+				if (onces[i].object == api->actor->owner(o) && onces[i].shot == shot && time - onces[i].at < 3.0)
+					return;
+			api->actor->send(o, 0, kSprayed);
+			shadowHit(o, weapon, shot, true);
+		} else if (kd == SMS_KIND_PROTO_PIRANHA && curSettings(weapon).bosses)
+			gatekeeperHit(o, weapon);
+	}
+
+	// Proto Piranha: its open mouth takes the hit; asleep in its goop pile, a bazooka shot wakes it
+	// at once, two rifle shots do
+	SmsObject pileOf = 0;
+	double pileAt    = 0;
+	int pileHits     = 0;
+	void gatekeeperHit(SmsObject o, int weapon)
+	{
+		SmsWaterMeter m;
+		if (!meter(o, &m) || !m.open)
+			return;
+		if (m.most == 1) {
+			setMeter(o, 0, true);
+			api->core->log(mod, SMS_LOG_INFO, "Proto Piranha hit in the mouth by the %s", kNames[weapon]);
+			return;
+		}
+		bool wake = weapon == BAZOOKA;
+		if (weapon == RIFLE) {
+			if (pileOf != o || time - pileAt > 5.0)
+				pileHits = 0;
+			pileOf = o, pileAt = time;
+			wake   = ++pileHits >= 2;
+		}
+		if (wake)
+			pileHits = 0;
+		setMeter(o, wake ? 0 : m.left, true);
+		api->core->log(mod, SMS_LOG_INFO, "Proto Piranha's goop pile hit by the %s%s", kNames[weapon], wake ? ": it comes out" : "");
+	}
+
+	// SMS_EV_OBJECT_HIT on what is no small enemy: before the game's own hit
+	void otherHitBefore(SmsObject o, int kd, int weapon, uint32_t shot, const Settings& s)
+	{
+		before = 0;
+		SmsWaterMeter m;
+		if ((kd == SMS_KIND_CHARACTER || kd == SMS_KIND_PETEY_PIRANHA) && meter(o, &m)) {
+			before     = api->actor->owner(o);
+			beforeLeft = m.left;
+		}
+		if (!s.bosses)
+			return;
+		if (kd == SMS_KIND_EELY_MOUTH_TOOTH)
+			toothHit(o, weapon, shot, false);
+		else if (kd == SMS_KIND_PHANTAMANTA && (weapon == RIFLE || weapon == BAZOOKA)) {
+			if (meter(o, &m) && m.open && m.left > 1) { // the game's own hit (now) its last
+				setMeter(o, 1, false);
+				api->core->log(mod, SMS_LOG_INFO, "Phantamanta finished by the %s", kNames[weapon]);
+			}
+		} else if (kd == SMS_KIND_BIG_CHAIN_CHOMP)
+			chompHit(o, weapon, shot, true);
+	}
+
+	// SMS_EV_OBJECT_HIT_DONE on what is no small enemy: after the game's own hit
+	void otherHitDone(SmsObject o, int kd, int weapon, uint32_t shot, int result, const Settings& s)
+	{
+		SmsWaterMeter m;
+		const SmsObject owner = api->actor->owner(o);
+		if (kd == SMS_KIND_CHARACTER && meter(o, &m)) { // its goop: the game's own washing taken back, the weapon's share
+			if (before == owner && m.left > 0 && m.left < beforeLeft)
+				setMeter(o, beforeLeft, false), m.left = beforeLeft;
+			if (m.open && firstTime(owner, shot)) {
+				setMeter(o, m.left - washOf(weapon), true);
+				if (m.left - washOf(weapon) <= 0)
+					api->core->log(mod, SMS_LOG_INFO, "a character washed clean by the %s", kNames[weapon]);
+			}
+		} else if (kd == SMS_KIND_HIDING_PICTURE && result && meter(o, &m) && m.open) {
+			// a weapon's few drops each wash as much as a moment of FLUDD's stream (the bazooka's at once)
+			setMeter(o, weapon == BAZOOKA ? 0 : m.left - (weapon == RIFLE ? 120 : 15), false);
+		} else if (kd == SMS_KIND_SHADOW_MARIO && cur(weapon).burst <= 0.0f) {
+			shadowHit(o, weapon, shot, true);
+		} else if (s.bosses && kd == SMS_KIND_PETEY_PIRANHA && meter(o, &m)) {
+			if (before == owner && m.left < beforeLeft) { // the drop counted in his mouth fills him more
+				const int add = weapon == BAZOOKA ? m.most : weapon == RIFLE ? m.most / 4 : weapon == SMG ? m.most / 24 : 0;
+				setMeter(o, m.left - add, false);
+				api->core->log(mod, SMS_LOG_INFO, "Petey Piranha filled by the %s: %d of %d", kNames[weapon],
+				               m.most - (m.left - add > 0 ? m.left - add : 0), m.most);
+			}
+		} else if (s.bosses && kd == SMS_KIND_PHANTAMANTA && weapon == SMG && meter(o, &m) && m.wait == 30)
+			api->actor->set_water_wait(o, 20); // its next hit sooner
+		before = 0;
+	}
+
+	// The bazooka's burst on all but small enemies: Shadow Mario (his hitbox bigger), Petey's open
+	// mouth, Proto Piranha, Eely-Mouth's teeth, Phantamantas, Big Chain Chomp, characters washed,
+	// hiding pictures washed off, balls and fruit thrown, trees' leaves swaying
+	void burstOthers(int player, int weapon, uint32_t shot, const V& at, float r, const Settings& s)
+	{
+		if (!hasKinds())
+			return;
+		SmsObject all[160];
+		const SmsVec3 c = at.s();
+		int n           = api->actor->near(&c, r * kShadowHitbox + 1500.0f, 0, all, 160);
+		n               = n < 160 ? n : 160;
+		int things = 0, others = 0;
+		const float lift = cur(BAZOOKA).lift > 1.0f ? cur(BAZOOKA).lift : 20.0f;
+		for (int i = 0; i < n; i++) {
+			const SmsObject o = all[i];
+			const int kd      = api->actor->kind(o);
+			SmsWaterMeter m;
+			if (kd == SMS_KIND_SMALL_ENEMY || kd == SMS_KIND_OTHER)
+				continue;
+			if (kd == SMS_KIND_BALL || kd == SMS_KIND_TREE || kd == SMS_KIND_HIDING_PICTURE) {
+				SmsVec3 p;
+				if (!api->game->object_position(o, &p))
+					continue;
+				const float x = p.x - at.x, y = p.y - at.y, z = p.z - at.z, d = sqrtf(x * x + z * z);
+				if (kd == SMS_KIND_HIDING_PICTURE) {
+					if (d <= r * 1.5f && fabsf(y) <= r * 1.5f && meter(o, &m) && m.open) {
+						setMeter(o, 0, true);
+						api->core->log(mod, SMS_LOG_INFO, "a picture washed off by the bazooka");
+					}
+					continue;
+				}
+				if (d > r * 1.3f || fabsf(y) > r)
+					continue;
+				const float near1 = 1.0f - d / (r * 1.3f); // 1 at the middle, 0 at the edge
+				SmsVec3 push;
+				if (kd == SMS_KIND_BALL) {
+					const float out = lift * 0.55f * (0.35f + 0.65f * near1);
+					push.x = (d > 1.0f ? x / d : 1.0f) * out, push.z = (d > 1.0f ? z / d : 0.0f) * out;
+					push.y = lift * 0.5f * (0.4f + 0.6f * near1);
+				} else
+					push.x = 0.0f, push.y = 10.0f * (0.5f + near1), push.z = 0.0f;
+				things += api->actor->knock(o, &push);
+				continue;
+			}
+			if (kd == SMS_KIND_CHARACTER) {
+				if (meter(o, &m) && m.open && (V(m.spot) - at).len() <= r && firstTime(o, shot)) {
+					setMeter(o, m.left - washOf(BAZOOKA), true);
+					others++;
+				}
+				continue;
+			}
+			if (kd == SMS_KIND_SHADOW_MARIO) {
+				if (!meter(o, &m))
+					continue;
+				const V d = V(m.spot) - at;
+				const float big = r * kShadowHitbox;
+				if (d.x * d.x + d.z * d.z <= big * big && fabsf(d.y) <= 400.0f * kShadowHitbox) {
+					hitTarget(o, player, weapon, shot);
+					others++;
+				}
+				continue;
+			}
+			if (!s.bosses)
+				continue;
+			if (kd == SMS_KIND_EELY_MOUTH) { // its teeth in it: each its share
+				SmsObject teeth[8];
+				int t = api->actor->parts(o, teeth, 8);
+				t     = t < 8 ? t : 8;
+				for (int k = 0; k < t; k++)
+					if (meter(teeth[k], &m) && (V(m.spot) - at).len() <= r + m.spot_radius) {
+						toothHit(teeth[k], BAZOOKA, shot, true);
+						others++;
+					}
+				continue;
+			}
+			if (!meter(o, &m) || !m.open)
+				continue;
+			const float d = (V(m.spot) - at).len();
+			if (kd == SMS_KIND_PETEY_PIRANHA && d <= m.spot_radius + 150.0f) { // a burst at his open mouth: full
+				setMeter(o, 0, true);
+				api->core->log(mod, SMS_LOG_INFO, "Petey Piranha filled by the bazooka");
+				others++;
+			} else if (kd == SMS_KIND_PROTO_PIRANHA && d <= (m.most == 1 ? m.spot_radius + 40.0f : r * 2.5f)) {
+				gatekeeperHit(o, BAZOOKA);
+				others++;
+			} else if (kd == SMS_KIND_PHANTAMANTA && d <= r + m.spot_radius) {
+				setMeter(o, 0, true);
+				api->core->log(mod, SMS_LOG_INFO, "Phantamanta finished by the bazooka");
+				others++;
+			} else if (kd == SMS_KIND_BIG_CHAIN_CHOMP && d <= r + m.spot_radius) {
+				chompHit(o, BAZOOKA, shot, false);
+				others++;
+			}
+		}
+		if (things || others)
+			api->core->log(mod, SMS_LOG_INFO, "the bazooka's burst: %d bosses or characters, %d things", others, things);
 	}
 
 	// ---------------------------------------------------------------- rocket jumps, pops
@@ -1051,6 +1433,7 @@ struct Engine {
 			hitEnemy(seen[i], player, weapon, shot, l > 40.0f ? x / l : wx, l > 40.0f ? z / l : wz);
 			inIt++;
 		}
+		burstOthers(player, weapon, shot, at, r, s);
 		cleanGoop(at, s.goopArea > 0.0f ? 860.0f * s.goopArea : r * 1.2f, s.goop, s.noClean);
 		explode(player, at, r);
 		rocketJump(player, at, r, s, s.enemySafe && inIt > 0);
@@ -1074,6 +1457,9 @@ struct Engine {
 			return 1; // a popped enemy's pieces: they push no one
 		const Settings& s = curSettings(weapon);
 		const uint32_t f = api->actor->flags(ev.object);
+		const int kd     = kindOf(ev.object);
+		if (kd != SMS_KIND_SMALL_ENEMY && kd != SMS_KIND_OTHER)
+			otherHitBefore(ev.object, kd, weapon, tagShot(d.tag), s);
 		// the bazooka with the rocket jump key held: the game never hears of the hit on a small enemy (its
 		// push and its being knocked back after), only the burst here, which throws them up
 		if (weapon == BAZOOKA && (s.keyLaunch & 1) && (f & SMS_ACTOR_FLAG_SMALL_ENEMY)) {
@@ -1122,9 +1508,18 @@ struct Engine {
 		}
 		softened = 0;
 		const uint32_t f = api->actor->flags(ev.object);
+		const Weapon& k = cur(weapon);
+		const int kd    = kindOf(ev.object);
+		if (kd != SMS_KIND_SMALL_ENEMY && kd != SMS_KIND_OTHER) {
+			otherHitDone(ev.object, kd, weapon, shot, ev.result, curSettings(weapon));
+			if (kd == SMS_KIND_SHADOW_MARIO && k.burst > 0.0f && !burstDone(shot)) { // the bazooka bursts on him
+				markBurst(shot);
+				burst(player, weapon, shot, V(d.position), k, curSettings(weapon), V(d.velocity));
+			}
+			return;
+		}
 		if (!(f & SMS_ACTOR_FLAG_SMALL_ENEMY))
 			return;
-		const Weapon& k = cur(weapon);
 		if (k.burst > 0.0f) {
 			if (!burstDone(shot)) { // once a shot, where it first hits an enemy
 				markBurst(shot);
