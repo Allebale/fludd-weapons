@@ -579,8 +579,10 @@ struct Engine {
 			if (!h.enemy || time >= h.launchUntil || (api->actor->flags(h.enemy) & SMS_ACTOR_FLAG_DEAD))
 				continue;
 			SmsVec3 v;
-			if (api->actor->velocity(h.enemy, &v) && v.y < h.launchUp * 0.8f) {
-				v.y = h.launchUp;
+			if (api->actor->velocity(h.enemy, &v)) {
+				if (v.y < h.launchUp * 0.8f)
+					v.y = h.launchUp;
+				v.x *= 0.25f, v.z *= 0.25f; // (going up, hardly across)
 				api->actor->set_velocity(h.enemy, &v);
 			}
 			api->actor->set_flags(h.enemy, SMS_ACTOR_FLAG_AIRBORNE, 0);
@@ -900,7 +902,8 @@ struct Engine {
 				h->launchUntil = time + 0.1;
 				h->launchUp    = s.keyLift > 0.0f ? s.keyLift : 30.0f;
 				SmsVec3 v;
-				if (api->actor->velocity(e, &v)) { // its own speed across the ground kept
+				if (api->actor->velocity(e, &v)) { // only a little of its own speed across the ground kept
+					v.x *= 0.25f, v.z *= 0.25f;
 					v.y = h->launchUp;
 					api->actor->set_velocity(e, &v);
 				}
@@ -1070,14 +1073,22 @@ struct Engine {
 			return 1; // a popped enemy's pieces: they push no one
 		const Settings& s = curSettings(weapon);
 		const uint32_t f = api->actor->flags(ev.object);
-		// the bazooka with the rocket jump key held: none of the game's push (its hit only throws them up)
-		const bool keyHeld = weapon == BAZOOKA && (s.keyLaunch & 1);
-		if ((s.push < 1.0f || keyHeld) && (f & SMS_ACTOR_FLAG_SMALL_ENEMY)) {
+		// the bazooka with the rocket jump key held: the game never hears of the hit on a small enemy (its
+		// push and its being knocked back after), only the burst here, which throws them up
+		if (weapon == BAZOOKA && (s.keyLaunch & 1) && (f & SMS_ACTOR_FLAG_SMALL_ENEMY)) {
+			const uint32_t shot = tagShot(d.tag);
+			if (!burstDone(shot)) {
+				markBurst(shot);
+				burst(tagPlayer(d.tag), weapon, shot, V(d.position), cur(weapon), s, V(d.velocity));
+			}
+			return 1;
+		}
+		if (s.push < 1.0f && (f & SMS_ACTOR_FLAG_SMALL_ENEMY)) {
 			SmsVec3 v;
 			if (api->actor->velocity(ev.object, &v)) {
 				softened  = ev.object;
 				softenedV = V(v);
-				softenBy  = keyHeld ? 0.0f : s.push > 0.0f ? s.push : 0.0f;
+				softenBy  = s.push > 0.0f ? s.push : 0.0f;
 			}
 		}
 		return 0; // the game's own hit still
