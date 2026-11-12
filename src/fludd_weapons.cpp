@@ -7,37 +7,17 @@
 // into first person and back. The Bazooka's burst throws enemies, and Mario too in first person
 // (a rocket jump). Long range: enemies and characters drawn and moving further away, to hit there.
 //
-// How: the game does the firing (api->held_fludd's set_weapon and set_weapon_stats); this mod
-// chooses, keeps R from the game's own spray while a weapon fires, and draws the scope and the
-// weapon's name. It and the First Person mod read each other through held_fludd's get_state.
+// How: all of it here, on the mod API's general tools (API 1.8): its own water drops (api->water),
+// the game's actors (api->actor), its own models (api->models), FLUDD posed as the gun
+// (held_fludd->pose). It and the First Person mod read each other through held_fludd's get_state.
 #include <sms_mod.hpp>
 #include "recommended_preset.h"
 #include "shots.h"
 #include "models.h"
 #include "goop.h"
 
-// The weapons made for bosses and the bazooka pushing enemies in the air forward (set_weapon's
-// flags): coming in the next game, after SDK 1.7.0; an older game leaves the flags unused
-#ifndef SMS_SPRAY_BOSSES
-#define SMS_SPRAY_BOSSES 32
-#endif
-#ifndef SMS_SPRAY_AIR_FORWARD
-#define SMS_SPRAY_AIR_FORWARD 64
-#endif
-#ifndef SMS_SPRAY_SHOT_WATER
-#define SMS_SPRAY_SHOT_WATER 128   // the bazooka's shot seen flying: a streak of water
-#define SMS_SPRAY_SHOT_BALLOON 256 // ...or a green water balloon that pops where it bursts
-#endif
-#ifndef SMS_SPRAY_SHOT_BIG
-#define SMS_SPRAY_SHOT_BIG 512     // ...a big one
-#endif
-#ifndef SMS_SPRAY_ROCKET_HURT
-#define SMS_SPRAY_ROCKET_HURT 1024 // each rocket jump costs Mario a point of health
-#endif
-#ifndef SMS_SPRAY_HEARTS
-#define SMS_SPRAY_HEARTS 2048      // defeated enemies drop a heart (a point of health)
-#define SMS_SPRAY_ROCKET_OUCH 4096 // Mario cries out as a rocket jump hurts him
-#endif
+// the weapons (the menu's): the mod's own numbers
+enum { W_NORMAL = 0, W_SHOTGUN = 1, W_RIFLE = 2, W_BAZOOKA = 3, W_SMG = 4, W_FIRE_GOOP = 5, W_ELECTRIC_GOOP = 6, W_BLACK_GOOP = 7 };
 
 #include <math.h>
 #include <string>
@@ -45,31 +25,29 @@
 
 namespace {
 
-// the game's FLUDD weapons: api->held_fludd (Allebale's First Person and Remastered builds), taken
-// only if its table says so (its magic)
+// FLUDD held in view and posed as a gun: api->held_fludd with its pose (API 1.8), taken only if
+// its table says so (its magic)
 const SmsHeldFluddApi* heldFluddApi(const SmsApi& api)
 {
 	if (api.size < offsetof(SmsApi, held_fludd) + sizeof(void*) || !api.held_fludd) // SMS_API_HAS
 		return nullptr;
 	const SmsHeldFluddApi* h = api.held_fludd;
-	return h->size >= offsetof(SmsHeldFluddApi, set_weapon) + sizeof(void*) && h->magic == SMS_HELD_FLUDD_MAGIC
-	               && h->set_weapon
-	           ? h
-	           : nullptr;
+	return h->size >= offsetof(SmsHeldFluddApi, pose) + sizeof(void*) && h->magic == SMS_HELD_FLUDD_MAGIC && h->pose ? h
+	                                                                                                              : nullptr;
 }
 bool has(const SmsHeldFluddApi* h, size_t end) { return h && h->size >= end; }
 #define HELD_HAS(h, field) has(h, offsetof(SmsHeldFluddApi, field) + sizeof(void*))
 
 const char* const kWeaponNames[] = {"FLUDD", "Rifle", "Submachine gun", "Bazooka", "Fire goop", "Electric goop", "Black goop"};
-const int kWeaponIds[]           = {SMS_SPRAY_NORMAL, SMS_SPRAY_RIFLE, SMS_SPRAY_SMG, SMS_SPRAY_BAZOOKA, SMS_SPRAY_FIRE_GOOP,
-                                    SMS_SPRAY_ELECTRIC_GOOP, SMS_SPRAY_BLACK_GOOP};
+const int kWeaponIds[]           = {W_NORMAL, W_RIFLE, W_SMG, W_BAZOOKA, W_FIRE_GOOP,
+                                    W_ELECTRIC_GOOP, W_BLACK_GOOP};
 const int kWeaponCount           = 7;
 // the keyboard keys a weapon can be chosen with (the menu's choices after None)
 const char* const kNumberKeys[]   = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
 const int kKeyDefaults[] = {1, 5, 4, 3, 7, 6, 2}; // each weapon's key (the menu's choice: 1..9, 10 for 0)
 const char* const kKeyChoices[]   = {"None", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
 // the goop weapons: FLUDD's own stream, as fire or electric goop (R left to the game)
-bool isGoop(int w) { return w == SMS_SPRAY_FIRE_GOOP || w == SMS_SPRAY_ELECTRIC_GOOP || w == SMS_SPRAY_BLACK_GOOP; }
+bool isGoop(int w) { return w == W_FIRE_GOOP || w == W_ELECTRIC_GOOP || w == W_BLACK_GOOP; }
 
 // long range: how much further than the game's own distance enemies and characters are drawn and
 // move (the "long_range" setting)
@@ -107,6 +85,9 @@ struct FluddWeapons : sms::Mod {
 	goop::Goop gp;     // the goop weapons (the mod API's tagged drops, landings, pictures)
 	SmsMesh held[3] = {}, pack[3] = {}, packGun[3] = {}; // the weapons' models (api->models)
 	bool modelsMade = false;
+	float muzzleOf[2][3] = {};  // each player's pack's gun's muzzle, as last placed (third person)
+	SmsVec3 muzzleMario[2] = {}; // where Mario was then
+	double muzzleAt[2]     = {-10.0, -10.0};
 	double underAt  = -10.0; // the last SMS_EV_DRAW_UNDER_HUD (the game draws mods under its HUD)
 	float viewFar = 1.0f; // the long range given the game (game->set_view_distance)
 	bool playing = true; // the stage's opening is over (SMS_EV_STAGE_START): the player has the controls
@@ -121,7 +102,7 @@ struct FluddWeapons : sms::Mod {
 	}
 	// the shots this mod fires itself (a game with api->water and api->actor); else the game's own
 	bool ownShots() const { return eng.ready(); }
-	static bool shotWeapon(int w) { return w == SMS_SPRAY_RIFLE || w == SMS_SPRAY_SMG || w == SMS_SPRAY_BAZOOKA; }
+	static bool shotWeapon(int w) { return w == W_RIFLE || w == W_SMG || w == W_BAZOOKA; }
 
 	// Each player's (co-op: two, each with their own controller; alone, the first)
 	struct Player {
@@ -133,14 +114,12 @@ struct FluddWeapons : sms::Mod {
 		bool sawFirst = false;      // ...and first person has come on for it
 		double zoomedAt  = 0;       // when the zoom came on (the scope comes in with it)
 		bool upWasDown = false, rightWasDown = false, leftWasDown = false;
-		int lastSet    = -1; // the weapon and flags last set, -1 none
 	};
 	Player ps[2];
 	int cur = 0; // the player being worked on
 	Player& P() { return ps[cur]; }
 	const Player& P() const { return ps[cur]; }
 	bool told      = false, toldNone = false;
-	float lastFar  = 1.0f;
 	double toastUntil = 0;
 	const char* toastText = "";
 	int toastPlayer = 0;
@@ -188,7 +167,7 @@ struct FluddWeapons : sms::Mod {
 		return s;
 	}
 
-	int chosen() const { return P().weapon >= 0 && P().weapon < kWeaponCount && allowed(P().weapon) ? kWeaponIds[P().weapon] : SMS_SPRAY_NORMAL; }
+	int chosen() const { return P().weapon >= 0 && P().weapon < kWeaponCount && allowed(P().weapon) ? kWeaponIds[P().weapon] : W_NORMAL; }
 	// a weapon turned off in the menu: not chosen at all (FLUDD always can be)
 	bool allowed(int w) const
 	{
@@ -233,7 +212,7 @@ struct FluddWeapons : sms::Mod {
 
 	int weaponNow() const
 	{
-		if (!weaponsHere() || chosen() == SMS_SPRAY_NORMAL || holding() || onCoaster)
+		if (!weaponsHere() || chosen() == W_NORMAL || holding() || onCoaster)
 			return 0; // (on Pinna Park's roller coaster: its own rockets, FLUDD's as ever)
 		SmsPlayer m = SmsPlayer();
 		m.size      = sizeof m;
@@ -292,7 +271,7 @@ struct FluddWeapons : sms::Mod {
 	bool canZoom() const
 	{
 		const SmsHeldFluddState s = state();
-		return setting("weapons", 1) && chosen() == SMS_SPRAY_RIFLE && s.first_person && s.held;
+		return setting("weapons", 1) && chosen() == W_RIFLE && s.first_person && s.held;
 	}
 	void toggleZoom(const SmsPad& p)
 	{
@@ -319,7 +298,7 @@ struct FluddWeapons : sms::Mod {
 			info("rifle zoom off, back to third person");
 			return;
 		}
-		if (!fp && chosen() == SMS_SPRAY_RIFLE && thirdPersonWeapons() && weaponNow() == SMS_SPRAY_RIFLE) {
+		if (!fp && chosen() == W_RIFLE && thirdPersonWeapons() && weaponNow() == W_RIFLE) {
 			zoomed = zoomFromThird = true; // into first person for it
 			sawFirst = false;
 			zoomedAt = core().time();
@@ -383,7 +362,7 @@ struct FluddWeapons : sms::Mod {
 				packGun[i] = wmodels::make(a.models, handle(), wmodels::kPackGun[i]);
 			}
 		}
-		const int which = w == SMS_SPRAY_RIFLE ? 0 : w == SMS_SPRAY_BAZOOKA ? 1 : w == SMS_SPRAY_SMG ? 2 : -1;
+		const int which = w == W_RIFLE ? 0 : w == W_BAZOOKA ? 1 : w == W_SMG ? 2 : -1;
 		if (which < 0)
 			return;
 		SmsPlayer m = SmsPlayer();
@@ -426,6 +405,15 @@ struct FluddWeapons : sms::Mod {
 				                           {0, c, -sn, off[1] + py - (c * py - sn * pz) - back - py},
 				                           {0, sn, c, off[2] + pz - (sn * py + c * pz) - pz}};
 				a.models->draw(packGun[which], SMS_FRAME_BACK_LEVEL, pl, place);
+				// its muzzle in the world (the shots start there), and where Mario was then
+				const float* mz = wmodels::kPackGunMuzzleAt[which];
+				float g[3];
+				for (int r = 0; r < 3; r++)
+					g[r] = place[r][0] * mz[0] + place[r][1] * mz[1] + place[r][2] * mz[2] + place[r][3];
+				for (int r = 0; r < 3; r++)
+					muzzleOf[pl & 1][r] = L[r][0] * g[0] + L[r][1] * g[1] + L[r][2] * g[2] + L[r][3];
+				muzzleMario[pl & 1] = m.position;
+				muzzleAt[pl & 1]    = eng.time;
 			}
 		}
 		if (hide)
@@ -493,7 +481,7 @@ struct FluddWeapons : sms::Mod {
 		return sc > 0 && input().key_down(sc);
 	}
 
-	// A weapon's numbers from the menu for this mod's own shots (the same sendStats gives the game)
+	// A weapon's numbers from the menu for this mod's shots
 	shots::Settings shotSettings(int w) const
 	{
 		shots::Settings s = shots::Settings();
@@ -502,30 +490,30 @@ struct FluddWeapons : sms::Mod {
 		s.defeat = setting("weapons_defeat", 1) != 0;
 		s.third  = setting("third_person_weapons", 1) != 0;
 		s.inView = inView;
-		const char* goopKey = w == SMS_SPRAY_RIFLE ? "rifle_goop" : w == SMS_SPRAY_SMG ? "smg_goop" : "bazooka_goop";
-		s.goop     = (float)setting(goopKey, w == SMS_SPRAY_BAZOOKA ? 400 : 100) / 100.0f;
-		s.goopArea = w == SMS_SPRAY_BAZOOKA ? (float)setting("bazooka_goop_area", 400) / 100.0f : 0.0f;
-		s.noClean  = w == SMS_SPRAY_BAZOOKA && muteKeysHeld();
+		const char* goopKey = w == W_RIFLE ? "rifle_goop" : w == W_SMG ? "smg_goop" : "bazooka_goop";
+		s.goop     = (float)setting(goopKey, w == W_BAZOOKA ? 400 : 100) / 100.0f;
+		s.goopArea = w == W_BAZOOKA ? (float)setting("bazooka_goop_area", 400) / 100.0f : 0.0f;
+		s.noClean  = w == W_BAZOOKA && muteKeysHeld();
 		s.hitSize = 1.0f;
 		s.dropSize = 1.0f;
 		s.range = 1.0f;
 		s.lift = 0.0f;
 		s.burst = 1.0f;
-		if (w == SMS_SPRAY_RIFLE) {
+		if (w == W_RIFLE) {
 			s.every    = (float)setting("rifle_rate", 13) / 10.0f;
 			s.push     = (float)setting("rifle_push", 300) / 100.0f;
 			s.toDefeat = setting("rifle_defeat", 2);
 			s.water    = setting("rifle_water", 16);
 			s.hitSize  = (float)setting("rifle_hit", 100) / 100.0f;
 			s.dropSize = (float)setting(P().zoomed && inView ? "rifle_blob_scope" : inView ? "rifle_blob" : "rifle_blob_third", P().zoomed && inView ? 20 : 80) / 100.0f;
-		} else if (w == SMS_SPRAY_SMG) {
+		} else if (w == W_SMG) {
 			s.every    = (float)setting("smg_rate", 14) / 100.0f;
 			s.push     = (float)setting("smg_push", 90) / 100.0f;
 			s.toDefeat = setting("smg_defeat", 6);
 			s.water    = setting("smg_water", 16);
 			s.hitSize  = (float)setting("smg_hit", 100) / 100.0f;
 			s.dropSize = (float)setting("smg_blob", 20) / 100.0f;
-		} else if (w == SMS_SPRAY_BAZOOKA) {
+		} else if (w == W_BAZOOKA) {
 			const bool jump = rocketJumpOn();
 			s.every    = (float)setting("bazooka_rate", 8) / 10.0f;
 			s.range    = (float)setting("bazooka_range", 100) / 100.0f;
@@ -553,126 +541,13 @@ struct FluddWeapons : sms::Mod {
 		return s;
 	}
 
-	// The weapons' numbers from the menu, to the game.
-	void sendStats(const SmsHeldFluddApi* h)
-	{
-		if (!HELD_HAS(h, set_weapon_stats) || !h->set_weapon_stats)
-			return;
-		const int r       = setting("long_range", 5);
-		const float far   = kRangeScale[r >= 0 && r < kRangeCount ? r : 0];
-		if (far != lastFar) {
-			info("long range: %s (%.1f times as far)", kRanges[r >= 0 && r < kRangeCount ? r : 0], far);
-			lastFar = far;
-		}
-		const int launch = keyLaunchNow(); // (air shots and the rocket jump key's shots, for every weapon)
-		// with this mod's own shots it does the long range, rocket jumps and the key's shots itself
-		const bool own      = ownShots();
-		const float gameFar = own ? 1.0f : far;
-		const int shotLaunch = own ? 0 : launch;
-		const int sh      = setting("shadow_mario", 5);
-		const float boss  = kShadowDamage[sh >= 0 && sh < kShadowCount ? sh : 2];
-		SmsSprayStats ns  = SmsSprayStats(); // FLUDD's own spray: only its time to defeat
-		ns.size           = sizeof ns;
-		ns.every          = (float)setting("normal_defeat_time", 4) / 10.0f;
-		ns.far_scale      = gameFar;
-		ns.shadow_damage = boss;
-		ns.key_launch    = launch;
-		h->set_weapon_stats(SMS_SPRAY_NORMAL, &ns);
-
-		SmsSprayStats rf = SmsSprayStats(); // the Rifle: one big, fast blob of water, dead straight
-		rf.size          = sizeof rf;
-		rf.every         = (float)setting("rifle_rate", 13) / 10.0f;
-		rf.push          = (float)setting("rifle_push", 300) / 100.0f;
-		rf.range         = 1.0f;
-		rf.to_defeat     = setting("rifle_defeat", 2);
-		rf.water         = setting("rifle_water", 16);
-		rf.hit_size      = (float)setting("rifle_hit", 100) / 100.0f;
-		// its blob's size: zoomed (the scope), else first or third person's
-		const SmsHeldFluddState seen = state();
-		const bool inView  = seen.first_person && seen.held;
-		rf.drop_size     = (float)setting(P().zoomed && inView ? "rifle_blob_scope" : inView ? "rifle_blob" : "rifle_blob_third", P().zoomed && inView ? 20 : 80) / 100.0f;
-		rf.burst         = 1.0f;
-		rf.view_distance = (float)setting("rifle_distance", 50);
-		rf.far_scale     = gameFar;
-		rf.shadow_damage = boss;
-		rf.key_launch    = shotLaunch;
-		h->set_weapon_stats(SMS_SPRAY_RIFLE, &rf);
-
-		SmsSprayStats sm = SmsSprayStats(); // the Submachine gun: the Rifle's kind of shot, faster and softer
-		sm.size          = sizeof sm;
-		sm.every         = (float)setting("smg_rate", 14) / 100.0f;
-		sm.push          = (float)setting("smg_push", 90) / 100.0f;
-		sm.range         = 1.0f;
-		sm.to_defeat     = setting("smg_defeat", 6);
-		sm.water         = setting("smg_water", 16);
-		sm.hit_size      = (float)setting("smg_hit", 100) / 100.0f;
-		sm.drop_size     = (float)setting("smg_blob", 20) / 100.0f;
-		sm.burst         = 1.0f;
-		sm.view_distance = (float)setting("smg_distance", 45);
-		sm.far_scale     = gameFar;
-		sm.shadow_damage = boss;
-		sm.key_launch    = shotLaunch;
-		h->set_weapon_stats(SMS_SPRAY_SMG, &sm);
-
-		// the Bazooka: a burst where it lands (an older game reads only the stats it knows)
-		SmsSprayStats bz = SmsSprayStats();
-		bz.size          = sizeof bz;
-		bz.every         = (float)setting("bazooka_rate", 8) / 10.0f;
-		bz.range         = (float)setting("bazooka_range", 100) / 100.0f;
-		bz.to_defeat     = setting("bazooka_defeat", 3);
-		bz.water         = setting("bazooka_water", 60);
-		bz.hit_size      = 1.0f;
-		bz.drop_size     = 1.0f;
-		// its burst's size: rocket jumping (first person, rocket jumps on now), else first or third person's
-		const SmsHeldFluddState view = state();
-		const bool held  = view.first_person && view.held;
-		const bool jump  = rocketJumpOn();
-		bz.burst         = (float)setting(held && jump ? "bazooka_burst_jump" : held ? "bazooka_burst" : "bazooka_burst_third", held ? 130 : 400) / 100.0f;
-		bz.push          = (float)setting(held ? "bazooka_push" : "bazooka_push_third", held ? 200 : 800) / 100.0f;
-		bz.lift          = (float)setting("bazooka_lift", 40) / 100.0f;
-		bz.self_jump     = jump && !own ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
-		bz.view_distance = (float)setting("bazooka_distance", 55);
-		bz.far_scale     = gameFar;
-		bz.shadow_damage = boss;
-		bz.goop_area     = (float)setting("bazooka_goop_area", 400) / 100.0f;
-		bz.key_launch    = shotLaunch;
-		bz.feet_forward  = (float)setting("rocket_jump_feet", 50) / 100.0f;
-		bz.key_lift      = 30.0f * (float)setting("rocket_key_launch_height", 80) / 100.0f;
-		h->set_weapon_stats(SMS_SPRAY_BAZOOKA, &bz);
-		// the goop weapons: seconds to defeat an enemy, how long the goop lasts (in minutes), its puddles' size
-		for (int g = 0; g < 3; g++) {
-			const char* const pre = g == 2 ? "black_goop" : g ? "electric_goop" : "fire_goop";
-			std::string key(pre);
-			SmsSprayStats gs = SmsSprayStats();
-			gs.size          = sizeof gs;
-			// (the defaults: fire, electric, black)
-			static const int kDefeat[3] = {5, 12, 12}, kLife[3] = {20, 20, 90}, kSize[3] = {130, 130, 160};
-			static const int kHits[3] = {3, 1, 1}, kWater[3] = {250, 200, 200};
-			gs.every         = (float)setting((key + "_defeat").c_str(), kDefeat[g]) / 10.0f;
-			gs.range         = (float)setting((key + "_life").c_str(), kLife[g]) / 60.0f;
-			gs.burst         = (float)setting((key + "_size").c_str(), kSize[g]) / 100.0f;
-			// black goop: how fast; fire goop: 2 for the goop performance mode (the game's drawing of
-			// every goop simpler)
-			gs.push          = g == 2 ? (float)setting("black_goop_speed", 500) / 100.0f
-			                          : g == 0 && setting("goop_quality", 2) <= 1 ? 2.0f : 1.0f;
-			gs.to_defeat     = setting((key + "_hits").c_str(), kHits[g]);
-			gs.hit_size      = (float)setting("goop_wall_life", 15) / 60.0f; // its goop on walls' minutes
-			gs.lift          = g == 2 ? (float)setting("black_goop_air_turn", 30) / 100.0f : 1.0f; // black goop: turning in the air
-			gs.drop_size     = 1.0f;
-			gs.far_scale     = gameFar;  // (the same for every weapon: without it the long range
-			gs.shadow_damage = boss; // and Shadow Mario numbers flipped every frame)
-			gs.water         = setting((key + "_water").c_str(), kWater[g]); // percent of FLUDD's own
-			h->set_weapon_stats(g == 2 ? SMS_SPRAY_BLACK_GOOP : g ? SMS_SPRAY_ELECTRIC_GOOP : SMS_SPRAY_FIRE_GOOP, &gs);
-		}
-	}
-
-	// Each frame: the weapon (or none) to the game, its numbers, and the zoom for the First Person mod.
+	// Each frame: FLUDD's pose for the weapon (or none), and the zoom for the First Person mod.
 	void update()
 	{
 		const SmsHeldFluddApi* h = heldFluddApi(api());
 		if (!h) {
 			if (setting("weapons", 1) && !toldNone) {
-				warn("this game cannot fire FLUDD weapons (it needs a Remastered or First Person beta build)");
+				warn("this game cannot fire FLUDD weapons (it needs the mod API 1.8 tools: a newer game)");
 				toldNone = true;
 			}
 			return;
@@ -682,51 +557,26 @@ struct FluddWeapons : sms::Mod {
 			told = true;
 		}
 		const SmsHeldFluddState s = state();
-		const int w               = ownGoop() && isGoop(weaponNow()) ? 0 : weaponNow(); // (the mod's own goop: FLUDD to the game)
-		const bool own            = ownShots() && shotWeapon(w); // this mod fires it (the game only shows it)
-		const int defeat          = (setting("weapons_defeat", 1) ? SMS_SPRAY_DEFEAT : 0) | (P().rHeld && !own ? 2 : 0)
-		                 | (setting("boss_balance", 1) ? SMS_SPRAY_BOSSES : 0);
-		const int normal          = setting("normal_defeat", 0) && !own ? SMS_SPRAY_DEFEAT_NORMAL : 0;
-		int flags                 = 0;
-		if (w && s.first_person)
-			flags = defeat | normal;
-		else if (w) // third person: FLUDD on his back, or the weapon's pack
-			flags = defeat | normal | SMS_SPRAY_THIRD_PERSON | (setting("third_person_models", 1) ? SMS_SPRAY_THIRD_PERSON_MODEL : 0);
-		else if (s.first_person && s.held) // FLUDD's own spray, held in view
-			flags = normal;
-		if (flags && w == SMS_SPRAY_BAZOOKA && setting("bazooka_air_forward", 1) && !own)
-			flags |= SMS_SPRAY_AIR_FORWARD; // enemies already in the air pushed on forward, not up
-		if (flags && w == SMS_SPRAY_BAZOOKA && setting("rocket_jump_hurt", 1) && !own)
-			flags |= SMS_SPRAY_ROCKET_HURT | (setting("rocket_jump_ouch", 1) ? SMS_SPRAY_ROCKET_OUCH : 0)
-			         | ((setting("rocket_jump_cry_volume", 40) & 127) << 13); // its volume, in percent
-		if (flags && setting("rocket_jump", 2) != 0 && setting("enemy_hearts", 1)) // with rocket jumps on
-			flags |= SMS_SPRAY_HEARTS;
-		if (flags) { // how much goop the chosen one cleans, in tenths of the game's own
-			const char* key = w == SMS_SPRAY_RIFLE ? "rifle_goop" : w == SMS_SPRAY_SMG ? "smg_goop" : w == SMS_SPRAY_BAZOOKA ? "bazooka_goop" : 0;
-			if (key)
-				flags |= ((setting(key, w == SMS_SPRAY_BAZOOKA ? 400 : 100) / 10) & 127) << 20;
+		const int w               = weaponNow();
+		// FLUDD posed as the chosen gun (each tick): held still in view, its nozzle out on his back
+		// while it fires (and under the pack), one pump as each shot goes
+		int flags = 0;
+		float pump = -1.0f, hold = 0.0f;
+		if (shotWeapon(w)) {
+			const bool inView = s.first_person && s.held;
+			if (inView) {
+				flags = SMS_POSE_STILL;
+				hold  = (float)setting(w == W_RIFLE ? "rifle_distance" : w == W_SMG ? "smg_distance" : "bazooka_distance",
+				                       w == W_RIFLE ? 50 : w == W_SMG ? 45 : 55);
+			} else if (P().rHeld || setting("third_person_models", 1))
+				flags = SMS_POSE_NOZZLE_OUT;
+			const shots::Engine::Player& ep = eng.players[cur & 1];
+			const float len = ep.shotWeapon == shots::BAZOOKA ? 0.5f : ep.shotWeapon == shots::SMG ? 0.12f : 0.35f;
+			const float t   = (float)(eng.time - ep.shotAt);
+			if (t >= 0.0f && t < len && !(!inView && setting("third_person_models", 1)))
+				pump = t / len;
 		}
-		if (flags && w == SMS_SPRAY_BAZOOKA && muteKeysHeld() && !own)
-			flags |= 1 << 27; // SMS_SPRAY_MUTE_MARIO: his own voice left out while the keys are held
-		if (flags && w == SMS_SPRAY_BAZOOKA) { // its shot seen flying
-			const int look = setting("bazooka_projectile_look", 2);
-			flags |= look == 0 ? SMS_SPRAY_SHOT_WATER : look == 1 ? SMS_SPRAY_SHOT_BALLOON : SMS_SPRAY_SHOT_BALLOON | SMS_SPRAY_SHOT_BIG;
-		}
-		if (flags && !setting("goop_grass_press", 0))
-			flags |= 1 << 28; // electric goop leaves the grass standing
-		if (flags && !setting("goop_grass_burn", 0))
-			flags |= 1 << 29; // fire goop leaves the grass unburnt
-		if (flags && !setting("goop_walls", 1))
-			flags |= 1 << 30; // goop off walls
-		if (flags && !setting("goop_characters", 1))
-			flags |= (int)0x80000000u; // friendly characters left alone by the goop
-		const int set = w * 1000 + flags;
-		if (w || flags || P().lastSet > 0) {
-			h->set_weapon(w, flags);
-			if (w || flags)
-				sendStats(h);
-		}
-		P().lastSet = set;
+		h->pose(cur, flags, pump, hold);
 		if (HELD_HAS(h, set_zoom) && h->set_zoom)
 			h->set_zoom(P().zoomed ? (float)setting("rifle_zoom", 25) : 0.0f,
 			            P().zoomed ? (P().zoomFromThird ? SMS_ZOOM_FIRST_PERSON : 0) | (scopeShown() ? SMS_ZOOM_SCOPE : 0) : 0);
@@ -735,7 +585,7 @@ struct FluddWeapons : sms::Mod {
 	bool scopeShown() const
 	{
 		const SmsHeldFluddState s = state();
-		return P().zoomed && setting("rifle_scope", 1) && s.first_person && s.held && chosen() == SMS_SPRAY_RIFLE;
+		return P().zoomed && setting("rifle_scope", 1) && s.first_person && s.held && chosen() == W_RIFLE;
 	}
 
 	// The Rifle's sniper scope while it is zoomed: black round a round sight, thin cross hairs with
@@ -888,8 +738,6 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("goop_characters", "Goop shocks and burns friendly characters (never defeats them)", true);
 		preset.optionBool("goop_walls", "Goop sticks to walls and drips down", true);
 		preset.optionNumber("goop_wall_life", "Goop on walls lasts (seconds)", 15, 5, 300, 5);
-		preset.optionBool("goop_grass_press", "Electric goop presses the grass down (Remastered builds)", false);
-		preset.optionBool("goop_grass_burn", "Fire goop burns the grass away (Remastered builds)", false);
 		static const char* const kQualities[] = {"Very low", "Low", "Medium", "High", "Very high"};
 		preset.optionChoice("goop_quality", "Goop quality (lower for slower PCs)", std::vector<const char*>(kQualities, kQualities + 5), 2);
 		preset.check();
@@ -926,6 +774,21 @@ struct FluddWeapons : sms::Mod {
 		eng.mod = handle();
 		gp.api  = &api();
 		gp.mod  = handle();
+		eng.muzzleCtx = this;
+		eng.muzzle    = [](void* ctx, int pl, float* out) -> bool {
+			FluddWeapons* self = static_cast<FluddWeapons*>(ctx);
+			pl &= 1;
+			if (self->eng.time - self->muzzleAt[pl] > 0.2 || !self->setting("third_person_models", 1))
+				return false;
+			SmsPlayer m = SmsPlayer(); // moved on with him since it was placed
+			m.size      = sizeof m;
+			if (!self->api().player->get(&m) || !m.valid)
+				return false;
+			out[0] = self->muzzleOf[pl][0] + m.position.x - self->muzzleMario[pl].x;
+			out[1] = self->muzzleOf[pl][1] + m.position.y - self->muzzleMario[pl].y;
+			out[2] = self->muzzleOf[pl][2] + m.position.z - self->muzzleMario[pl].z;
+			return true;
+		};
 		eng.washCtx  = &gp;
 		eng.washGoop = [](void* g, float x, float y, float z, float r) { static_cast<goop::Goop*>(g)->washBurst(x, y, z, r); };
 		if (ownShots())
@@ -943,7 +806,7 @@ struct FluddWeapons : sms::Mod {
 			if (!ownShots() || e.id < 0x7800u || e.id > 0x792Fu)
 				return SMS_CONTINUE;
 			For f(*this, 0);
-			return weaponNow() == SMS_SPRAY_BAZOOKA && muteKeysHeld() ? SMS_CANCEL : SMS_CONTINUE;
+			return weaponNow() == W_BAZOOKA && muteKeysHeld() ? SMS_CANCEL : SMS_CONTINUE;
 		});
 		on<SmsEvTick>(SMS_EV_TICK, [this](SmsEvTick& t) {
 			if (!ownShots())
@@ -959,7 +822,7 @@ struct FluddWeapons : sms::Mod {
 			eng.chompTick();
 			{
 				For f(*this, 0); // (rocket jumps: player 1's)
-				eng.rocketTick(dt, weaponNow() == SMS_SPRAY_BAZOOKA && muteKeysHeld());
+				eng.rocketTick(dt, weaponNow() == W_BAZOOKA && muteKeysHeld());
 			}
 			const float far = farNow();
 			if (far != viewFar && SHOTS_HAS(api().game, SmsGameApi, set_view_distance)) {
@@ -976,6 +839,7 @@ struct FluddWeapons : sms::Mod {
 				               eng.cur(w), eng.curSettings(w));
 				drawModels(pl, w, s);
 			}
+			eng.normalDefeat = setting("normal_defeat", 0) ? (float)setting("normal_defeat_time", 4) / 10.0f : 0.0f;
 			eng.looksTick(dt);
 			eng.looksDraw();
 			if (ownGoop()) {

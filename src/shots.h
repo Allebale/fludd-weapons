@@ -14,7 +14,7 @@ namespace shots {
 // a table of the mod API has this function (an older game's may be shorter)
 #define SHOTS_HAS(t, T, f) ((t) && (t)->size >= offsetof(T, f) + sizeof(void*) && (t)->f)
 
-// the weapons (as the menu's ids: SMS_SPRAY_*'s numbers)
+// the weapons (as the menu's ids)
 enum { NORMAL = 0, RIFLE = 2, BAZOOKA = 3, SMG = 4, WEAPONS = 5 };
 const int PIECES = 7; // a drop's tag: the pieces of a popped enemy (they hit nothing)
 const char* const kNames[WEAPONS] = {"FLUDD", "shotgun", "rifle", "bazooka", "submachine gun"};
@@ -441,6 +441,9 @@ struct Engine {
 		const uint32_t tag    = tagOf(player, weapon, number);
 		const uint32_t shot   = tagShot(tag);
 		V from(d.position), way = V(d.velocity).unit();
+		float mz[3];
+		if (!inView && muzzle && muzzle(muzzleCtx, player, mz)) // the pack's gun's muzzle
+			from = V(mz[0], mz[1], mz[2]);
 		Straight* st = nullptr;
 		if (k.straight) {
 			V at;
@@ -465,8 +468,6 @@ struct Engine {
 			st->until   = time + 7.0 * (k.every > 0.1f ? k.every : 0.1f);
 			if (weapon == BAZOOKA)
 				pl.bazookaAt = at;
-			api->core->log(mod, SMS_LOG_INFO, "[diag] the %s (%s) aimed at %s %.0f away", kNames[weapon], inView ? "first person" : "third person",
-			               e ? "an enemy" : "nothing", l);
 		}
 		const float reach = k.straight ? 1.0f : s.range;
 		const float pow   = V(d.velocity).len() * k.pow * (reach > 0.0f ? sqrtf(reach) : 1.0f);
@@ -496,6 +497,18 @@ struct Engine {
 		}
 		if (!made)
 			return false;
+		if (weapon == BAZOOKA && s.look == 0) { // its shot seen flying as a streak of water behind it (only to look at)
+			SmsWaterDrop v = out;
+			v.tag          = tagOf(player, PIECES, nextShot++);
+			v.hit_radius = v.hit_height = 0.0f;
+			v.attack       = 0;
+			for (int i = 1; i <= 4; i++) {
+				v.position  = (from - way * (14.0f * (float)i)).s();
+				v.velocity  = (way * pow).s();
+				v.drop_size = out.drop_size * powf(0.8f, (float)i);
+				api->water->emit(&v);
+			}
+		}
 		if (h && h->size >= offsetof(SmsHeldFluddApi, kick) + sizeof(void*) && h->kick)
 			h->kick(k.kick);
 		pl.soundUntil = time + (weapon == BAZOOKA ? 0.45 : weapon == SMG ? 0.1 : 0.3);
@@ -664,9 +677,6 @@ struct Engine {
 				continue;
 			}
 			const int moved = api->actor->push(h.enemy, h.vx * dt, h.vz * dt);
-			if (moved != 1)
-				api->core->log(mod, SMS_LOG_INFO, "[diag] a shove of %.0f %s", sqrtf(h.vx * h.vx + h.vz * h.vz),
-				               moved == 2 ? "against a wall" : "stopped (the stage's edge)");
 			if (!moved) {
 				h.vx = h.vz = 0.0f; // the stage's edge
 				continue;
@@ -698,6 +708,41 @@ struct Engine {
 			d.size         = sizeof d;
 			if (api->water->nozzle_drop(player, &d) && api->audio->size >= offsetof(SmsAudioApi, play_sound_at) + sizeof(void*))
 				api->audio->play_sound_at(kSoundNozzle, &d.position);
+		}
+	}
+
+	// ---------------------------------------------------------------- FLUDD's own spray (normalDefeat)
+
+	// The normal spray may defeat a small enemy too ("normal_defeat"): kept on it for `normalDefeat`
+	// seconds (a short burst; a gap of a fifth of a second starts it again)
+	float normalDefeat = 0.0f;
+	struct Sprayed {
+		SmsObject e = 0;
+		double since = 0, last = 0;
+	};
+	Sprayed sprayed[16];
+	void normalHit(SmsObject e)
+	{
+		if (normalDefeat <= 0.0f || !(api->actor->flags(e) & SMS_ACTOR_FLAG_SMALL_ENEMY))
+			return;
+		Sprayed* sp = 0;
+		for (int i = 0; i < 16 && !sp; i++)
+			if (sprayed[i].e == e)
+				sp = &sprayed[i];
+		if (!sp) { // a free one, or the one sprayed longest ago
+			sp = &sprayed[0];
+			for (int i = 0; i < 16; i++)
+				if (sprayed[i].last < sp->last)
+					sp = &sprayed[i];
+			sp->e = e, sp->since = time;
+		}
+		if (time - sp->last > 0.2)
+			sp->since = time;
+		sp->last = time;
+		if (time - sp->since >= normalDefeat) {
+			api->core->log(mod, SMS_LOG_INFO, "an enemy defeated by FLUDD's spray");
+			api->actor->defeat(e);
+			sp->e = 0;
 		}
 	}
 
@@ -1660,8 +1705,6 @@ struct Engine {
 				}
 			}
 		}
-		if (fresh)
-			api->core->log(mod, SMS_LOG_INFO, "[diag] %s hit: shove %.0f (walks %d, flags %x)", kNames[weapon], walks ? k.shove : 0.0f, walks ? 1 : 0, f);
 		if (!fresh)
 			return;
 		h->lastShot = shot;
@@ -1729,6 +1772,10 @@ struct Engine {
 
 	// Goop washed off round a burst: where it burst (goop on a wall too), and spots on the ground in two
 	// rings round it, each bigger the more it cleans
+	// where a player's shots start in third person: its pack's gun's muzzle (the models' own), if any
+	void* muzzleCtx = 0;
+	bool (*muzzle)(void* ctx, int player, float* out) = 0;
+
 	// a mod's own goop washed by a burst (the goop weapons', goop.h): its own puddles too
 	void* washCtx = 0;
 	void (*washGoop)(void* ctx, float x, float y, float z, float r) = 0;
@@ -1837,7 +1884,13 @@ struct Engine {
 		const int slot = api->water->drop_of(ev.sender);
 		SmsWaterDrop d = SmsWaterDrop();
 		d.size         = sizeof d;
-		if (slot < 0 || !api->water->get(slot, &d) || !mine(d.tag))
+		if (slot < 0 || !api->water->get(slot, &d))
+			return;
+		if (!d.tag && d.player >= 0) {
+			normalHit(ev.object); // FLUDD's own spray
+			return;
+		}
+		if (!mine(d.tag))
 			return;
 		const int weapon  = tagWeapon(d.tag);
 		const int player  = tagPlayer(d.tag);

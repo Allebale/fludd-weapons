@@ -21,11 +21,12 @@ A mod for the Super Mario Sunshine PC port: FLUDD fires a Rifle, a Submachine gu
   health back.
 - Weapons off on Pinna Park's roller coaster (its own rockets); FLUDD's jet pack under the sea.
 
-The newest features (bosses, goop, the Bazooka's shot, hearts, rocket jump health) need a game
-build newer than Chase's beta 2026.11.06; on that one the rest works.
+- The goop weapons: fire, electric and black goop out of FLUDD, puddles and wall goop where it lands.
 
-Needs a game build with `api->held_fludd` (Chase's beta 2026.11.06 or newer). Works with the
-[First Person mod](https://github.com/Allebale/sms-first-person-mod) for the weapons held in view.
+All of it is this mod's own, built on the mod API's general tools (API 1.8: `api->water`,
+`api->actor`, `api->models`, `held_fludd->pose`), so it needs a game with them; the game itself has
+no weapons. Works with the [First Person mod](https://github.com/Allebale/sms-first-person-mod) for
+the weapons held in view.
 
 ## Install
 

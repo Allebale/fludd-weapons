@@ -37,6 +37,7 @@ const float kHeldScale[3]  = {12.5f, 15.0f, 15.0f};                    // to abo
 const float kHeldAhead[3]  = {4.0f, 6.0f, 4.0f};                        // the muzzle past the water's start
 const float kKickBack[3]   = {6.0f, 9.0f, 3.5f};                        // the pack's gun's kick: back, and its tilt
 const float kKickTilt[3]   = {0.25f, 0.2f, 0.12f};
+const float* const kPackGunMuzzleAt[3] = {kRiflePackGunMuzzleAt, kBazookaPackGunMuzzleAt, kSmgPackGunMuzzleAt}; // (its units)
 const float kPivotY = 2.0f, kPivotZ = 21.0f; // where the pack's gun sits on its neck (the pack's units)
 
 inline SmsMesh make(const SmsModelApi* m, SmsMod* mod, const Source& s)
