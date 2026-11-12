@@ -1351,6 +1351,8 @@ struct Goop {
 			const int k = kindOfTag(d.tag);
 			if (!k)
 				continue;
+			if (GOOP_HAS(api->water, SmsWaterApi, seen_at)) // co-op: the other's first-person stream off their back
+				api->water->seen_at(&d.position, viewer);
 			Drop dr;
 			dr.p = V3(d.position), dr.v = V3(d.velocity), dr.size = d.drop_size, dr.alive = (float)d.alive, dr.kind = k;
 			drops.push_back(dr);
@@ -1569,8 +1571,8 @@ struct Goop {
 		if (vz > r * 1.4f + 20.0f)
 			return; // behind the view
 		// far off, fewer corners (very high: twice as far before; low: every other, very low: every fourth)
-		const float away = -vz - r * 1.4f, far = set.quality >= 4 ? 2.0f : set.quality == 2 ? 0.6f : 1.0f;
-		int every        = away > 6000.0f * far ? 4 : away > 2500.0f * far ? 2 : 1;
+		const float away = -vz - r * 1.4f, spread = set.quality >= 4 ? 2.0f : set.quality == 2 ? 0.6f : 1.0f;
+		int every        = away > 6000.0f * spread ? 4 : away > 2500.0f * spread ? 2 : 1;
 		every *= set.quality <= 0 ? 4 : set.quality == 1 ? 2 : 1;
 		const int kAround = 56, kRings = 7;
 		static float cs[kAround], sn[kAround];

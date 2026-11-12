@@ -101,7 +101,7 @@ struct Settings {
 	bool hearts;     // the bazooka's defeats drop a heart (first person)
 	bool keepPictures; // the bazooka leaves graffiti symbols (hiding pictures) to FLUDD
 	bool enemySafe;  // the rocket jump key held: a burst that hits an enemy costs Mario no health
-	float far;       // long range: how much further enemies are seen (1 the game's own)
+	float viewRange;      // long range: how much further enemies are seen (1 the game's own)
 };
 
 const float kHitWindow   = 4.0f;     // seconds: shots counted together towards a defeat
@@ -1715,7 +1715,7 @@ struct Engine {
 		h->lastShot = shot;
 		if (!s.defeat)
 			return;
-		if (time - h->last > kHitWindow * (s.far > 1.0f ? s.far : 1.0f)) // longer at long range
+		if (time - h->last > kHitWindow * (s.viewRange > 1.0f ? s.viewRange : 1.0f)) // longer at long range
 			h->hits = 0;
 		h->hits++;
 		h->last = time;

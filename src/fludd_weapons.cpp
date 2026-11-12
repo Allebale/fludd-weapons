@@ -535,7 +535,7 @@ struct FluddWeapons : sms::Mod {
 			s.keyLift     = 30.0f * (float)setting("rocket_key_launch_height", 80) / 100.0f;
 			s.airForward  = setting("bazooka_air_forward", 1) != 0;
 		}
-		s.far    = farNow();
+		s.viewRange = farNow();
 		s.look   = setting("bazooka_projectile_look", 2);
 		s.hearts = setting("rocket_jump", 2) != 0 && setting("enemy_hearts", 1) != 0;
 		s.bosses = setting("boss_balance", 1) != 0;
@@ -828,10 +828,10 @@ struct FluddWeapons : sms::Mod {
 				For f(*this, 0); // (rocket jumps: player 1's)
 				eng.rocketTick(dt, weaponNow() == W_BAZOOKA && muteKeysHeld());
 			}
-			const float far = farNow();
-			if (far != viewFar && SHOTS_HAS(api().game, SmsGameApi, set_view_distance)) {
-				api().game->set_view_distance(far);
-				viewFar = far;
+			const float distance = farNow();
+			if (distance != viewFar && SHOTS_HAS(api().game, SmsGameApi, set_view_distance)) {
+				api().game->set_view_distance(distance);
+				viewFar = distance;
 			}
 			for (int pl = 0; pl < players(); pl++) {
 				For f(*this, pl);

@@ -2053,6 +2053,12 @@ typedef struct SmsWaterApi {
 	   (as its stream does; none with infinite water). Returns the water
 	   left, -1 with no FLUDD. */
 	int (*use)(int player, int drops);
+	/* (API 1.8; check size) Co-op: where a point is seen in a view (0 player
+	   1's, 1 player 2's, as SmsEvDrawScene's). A first-person player's water
+	   comes out of the FLUDD in front of their face; the other player sees it
+	   come out of the FLUDD on their back, so a point near the first moves
+	   that way (less the further it is). 1 when it moved. */
+	int (*seen_at)(SmsVec3* at, int view);
 } SmsWaterApi;
 
 /* ------------------------------------------------------------------ actors (API 1.8) */
