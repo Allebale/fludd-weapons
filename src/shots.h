@@ -436,6 +436,11 @@ struct Engine {
 			eye = V(se), f = V(sf);
 		else if (!thirdView(weapon, &eye, &f))
 			return false;
+		else { // third person aimed up or down (the game's Y look, R and the stick): the game's own spray's way
+			const V g = V(d.velocity).unit();
+			if (fabsf(g.y) > 0.15f)
+				f = g;
+		}
 		pl.ready = time + k.every;
 		const uint32_t number = nextShot++;
 		const uint32_t tag    = tagOf(player, weapon, number);
