@@ -54,7 +54,7 @@ struct Settings {
 	bool walls       = true;    // goop sticks to walls
 	bool npcs        = true;    // friendly characters shocked and burnt (never defeated)
 	bool defeat      = true;    // enemies defeated by it
-	bool cheap       = false;   // performance mode: simpler puddles, fewer flames
+	int quality      = 3;       // its look: 0 very low (simplest puddles, fewest flames) to 4 very high
 	const Stats& of(int kind) const { return kinds[kind == kElectric ? 1 : kind == kBlack ? 2 : 0]; }
 };
 
@@ -1568,10 +1568,10 @@ struct Goop {
 		const float vz = view[2][0] * p.x + view[2][1] * p.y + view[2][2] * p.z + view[2][3];
 		if (vz > r * 1.4f + 20.0f)
 			return; // behind the view
-		const float away = -vz - r * 1.4f;
-		int every        = away > 6000.0f ? 4 : away > 2500.0f ? 2 : 1;
-		if (set.cheap)
-			every *= 2;
+		// far off, fewer corners (very high: twice as far before; low: every other, very low: every fourth)
+		const float away = -vz - r * 1.4f, far = set.quality >= 4 ? 2.0f : set.quality == 2 ? 0.6f : 1.0f;
+		int every        = away > 6000.0f * far ? 4 : away > 2500.0f * far ? 2 : 1;
+		every *= set.quality <= 0 ? 4 : set.quality == 1 ? 2 : 1;
 		const int kAround = 56, kRings = 7;
 		static float cs[kAround], sn[kAround];
 		static bool trig = false;
@@ -1595,7 +1595,7 @@ struct Goop {
 		float rr[kAround];
 		for (int k = 0; k < kAround; k++)
 			rr[k] = edgeAt(p, 6.2831853f * (float)k / kAround, r);
-		const int redo = set.cheap ? 16 : 8;
+		const int redo = set.quality >= 4 ? 4 : set.quality >= 3 ? 8 : 16;
 		if (joinedBorn[index] != p.born || fabsf(joinedSize[index] - r) > 6.0f || (frame + index) % redo == 0) {
 			joinedBorn[index] = p.born, joinedSize[index] = r;
 			for (int k = 0; k < kAround; k++) {
@@ -1618,7 +1618,7 @@ struct Goop {
 				const float x = cx + t[0] * ca + b[0] * sa + p.nx * h, y = cy + t[1] * ca + b[1] * sa + p.ny * h, z = cz + t[2] * ca + b[2] * sa + p.nz * h;
 				pos[j][k][0] = x, pos[j][k][1] = y, pos[j][k][2] = z;
 				float du = 0.0f, dv = 0.0f;
-				if (!set.cheap) { // the water's ripples over it
+				if (set.quality >= 2) { // the water's ripples over it
 					du = 3.5f * sinf(x * 0.045f + tm * 1.6f) + 2.5f * sinf(z * 0.06f - tm * 1.2f);
 					dv = 3.5f * sinf(z * 0.05f + tm * 1.4f) + 2.5f * sinf(x * 0.07f + tm * 1.9f);
 				}
@@ -1727,7 +1727,9 @@ struct Goop {
 			return;
 		float t[3], b[3];
 		basis(p, t, b);
-		const int count = set.cheap ? 1 + (int)(r / 90.0f) : 2 + (int)(r / 45.0f);
+		static const float kPer[5] = {150.0f, 90.0f, 60.0f, 45.0f, 35.0f}; // (a flame for so much of its size)
+		const int q     = set.quality < 0 ? 0 : set.quality > 4 ? 4 : set.quality;
+		const int count = (q >= 2 ? 2 : 1) + (int)(r / kPer[q]) + (q >= 4 ? 1 : 0);
 		const float tm  = (float)frame / 60.0f;
 		for (int i = 0; i < count; i++) {
 			const float phase = tm * 1.3f + (float)i * 0.618f + p.seed;
