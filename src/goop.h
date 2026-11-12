@@ -143,6 +143,7 @@ struct Goop {
 		float x = 0, z = 0, moved = 0;
 		bool held = false;
 		float hx = 0, hz = 0, hitAt = -100, heldAt = -100;
+		float launchedAt = -100; // thrown into the fire last (once a second and a half at most)
 	};
 	static const int kMovers = 256;
 	Mover movers[kMovers];
@@ -428,16 +429,21 @@ struct Goop {
 	// middle of the nearest other puddle of fire; with none, a hop a random way
 	void launchEnemy(SmsObject e)
 	{
-		if (api->actor->flags(e) & SMS_ACTOR_FLAG_AIRBORNE)
-			return;
 		if (flyingNow(e))
 			return;
+		Mover* mv = moverOf(e, true);
+		if (mv && time - mv->launchedAt < 1.5f)
+			return; // (just thrown)
+		if (mv)
+			mv->launchedAt = time;
 		float rad = 0, tall = 0;
 		api->actor->hit_size(e, &rad, &tall);
 		tall = tall > 20.0f ? tall : 100.0f;
 		const V3 at = posOf(e);
+		// the nearest other puddle of fire (the one it is in when there is no other: up and back into
+		// its middle)
 		const Puddle* to = 0;
-		bool in          = false;
+		const Puddle* in = 0;
 		float best       = 1e30f;
 		for (int i = 0; i < kPuddles; i++) {
 			const Puddle& p = puddles[i];
@@ -446,14 +452,14 @@ struct Goop {
 			const float dx = p.x - at.x, dz = p.z - at.z, d = dx * dx + dz * dz;
 			const float r = sizeNow(p);
 			if (d < r * r) {
-				in = true;
+				in = &p;
 				continue;
 			}
 			if (d < best)
 				best = d, to = &p;
 		}
-		if (in)
-			return; // already in the fire
+		if (!to)
+			to = in;
 		if (!to) { // no fire: a hop a random way
 			float g = api->actor->gravity(e);
 			g       = g > 0.05f ? g : 0.5f;
@@ -618,6 +624,9 @@ struct Goop {
 
 	SmsObject everyone[1024];
 	int everyoneCount = 0;
+	SmsObject mantas[24];
+	int mantaCount = 0;
+	float mantasAt = -10;
 
 	// which enemies move by themselves (their own moving added up)
 	Mover* moverOf(SmsObject e, bool make)
@@ -668,9 +677,14 @@ struct Goop {
 			if (!mv || mv->moved <= 60.0f || (api->actor->flags(e) & SMS_ACTOR_FLAG_AIRBORNE) || flyingNow(e) || zappedNow(e))
 				continue;
 			V3 at = posOf(e);
-			if (wasHeld && time - mv->hitAt > 0.5f) { // its own moving since (chasing him) undone
+			if (wasHeld && time - mv->hitAt > 0.5f) { // its own moving since (chasing him) undone, its chase stopped
 				at.x = mv->hx, at.z = mv->hz;
 				place(e, at.x, at.y, at.z);
+				SmsVec3 v;
+				if (api->actor->velocity(e, &v)) {
+					v.x = v.z = 0.0f;
+					api->actor->set_velocity(e, &v);
+				}
 			}
 			float edge;
 			const Puddle* p = nearFire(at.x, at.y, at.z, 2500.0f, &edge);
@@ -1053,6 +1067,7 @@ struct Goop {
 			movers[i] = Mover();
 		for (int p = 0; p < 2; p++)
 			players[p].havePrev = players[p].gliding = false, players[p].lastWater = -1;
+		mantaCount = 0, mantasAt = -10, everyoneCount = 0;
 	}
 
 	// each tick: `kinds` each player's goop weapon (0 none), `held` FLUDD held in their view
@@ -1086,10 +1101,23 @@ struct Goop {
 		}
 		if (!any && !kinds[0] && !kinds[1])
 			return;
-		// everyone in the stage (for the enemies' checks), each tick
+		// the enemies and characters in the stage (and the Phantamantas: a second's), for their checks
 		const SmsVec3 c = V3().s();
-		everyoneCount   = api->actor->near(&c, 1.0e7f, 0, everyone, 1024);
-		everyoneCount   = everyoneCount < 1024 ? everyoneCount : 1024;
+		everyoneCount   = api->actor->near(&c, 1.0e7f, SMS_ACTOR_FLAG_SMALL_ENEMY | SMS_ACTOR_FLAG_CHARACTER, everyone, 1000);
+		everyoneCount   = everyoneCount < 1000 ? everyoneCount : 1000;
+		if (time - mantasAt > 1.0f) {
+			mantasAt   = time;
+			mantaCount = 0;
+			static SmsObject all[1024];
+			int n = api->actor->near(&c, 1.0e7f, 0, all, 1024);
+			n     = n < 1024 ? n : 1024;
+			for (int i = 0; i < n && mantaCount < 24; i++)
+				if (api->actor->kind(all[i]) == SMS_KIND_PHANTAMANTA)
+					mantas[mantaCount++] = all[i];
+		}
+		for (int i = 0; i < mantaCount && everyoneCount < 1024; i++)
+			if (!gone(mantas[i]))
+				everyone[everyoneCount++] = mantas[i];
 		watchMovers();
 		if (!any)
 			return;
@@ -1723,6 +1751,8 @@ struct Goop {
 		if (!hasPictures())
 			return;
 		makeTextures();
+		if (buf.capacity() < 200000)
+			buf.reserve(200000);
 		memcpy(view, e.view_mtx, sizeof view);
 		eye    = V3(e.eye);
 		viewer = e.view;
