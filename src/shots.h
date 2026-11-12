@@ -1070,12 +1070,14 @@ struct Engine {
 			return 1; // a popped enemy's pieces: they push no one
 		const Settings& s = curSettings(weapon);
 		const uint32_t f = api->actor->flags(ev.object);
-		if (s.push < 1.0f && (f & SMS_ACTOR_FLAG_SMALL_ENEMY)) {
+		// the bazooka with the rocket jump key held: none of the game's push (its hit only throws them up)
+		const bool keyHeld = weapon == BAZOOKA && (s.keyLaunch & 1);
+		if ((s.push < 1.0f || keyHeld) && (f & SMS_ACTOR_FLAG_SMALL_ENEMY)) {
 			SmsVec3 v;
 			if (api->actor->velocity(ev.object, &v)) {
 				softened  = ev.object;
 				softenedV = V(v);
-				softenBy  = s.push > 0.0f ? s.push : 0.0f;
+				softenBy  = keyHeld ? 0.0f : s.push > 0.0f ? s.push : 0.0f;
 			}
 		}
 		return 0; // the game's own hit still
