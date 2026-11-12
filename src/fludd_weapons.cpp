@@ -105,6 +105,7 @@ struct FluddWeapons : sms::Mod {
 	shots::Engine eng; // the shots, hits and bursts (the mod API's water drops and actors)
 	SmsMesh held[3] = {}, pack[3] = {}, packGun[3] = {}; // the weapons' models (api->models)
 	bool modelsMade = false;
+	double underAt  = -10.0; // the last SMS_EV_DRAW_UNDER_HUD (the game draws mods under its HUD)
 	float viewFar = 1.0f; // the long range given the game (game->set_view_distance)
 	bool playing = true; // the stage's opening is over (SMS_EV_STAGE_START): the player has the controls
 	                     // (true as the mod loads: loaded in play)
@@ -706,49 +707,57 @@ struct FluddWeapons : sms::Mod {
 
 	// The Rifle's sniper scope while it is zoomed: black round a round sight, thin cross hairs with
 	// marks along them and a red dot in the middle, coming in with the zoom
+	// the scope of every player zoomed in, each in their part of the screen (co-op) (an older game's
+	// SMS_EV_DRAW, over the HUD; this game's own draws it itself, under its HUD)
 	void drawScope()
 	{
-		if (state().game_scope)
-			return; // an older game draws it itself, under its HUD
+		if (state().game_scope || core().time() - underAt < 0.5)
+			return; // drawn under the HUD (SMS_EV_DRAW_UNDER_HUD) or by the game itself
 		float cw = 0, ch = 0;
 		draw().canvas(&cw, &ch);
-		for (int pl = 0; pl < players(); pl++) { // each player's in their part of the screen (co-op)
-			For f(*this, pl);
-			if (!scopeShown())
-				continue;
-			float in = (float)((core().time() - P().zoomedAt) / 0.3);
-			in       = in < 0.0f ? 0.0f : in > 1.0f ? 1.0f : in;
-			if (in < 0.05f)
-				continue;
+		for (int pl = 0; pl < players(); pl++) {
 			float vx = 0, vy = 0, vw = 1, vh = 1;
 			const SmsHeldFluddApi* hf = api().held_fludd;
 			if (players() > 1 && hf && hf->size >= offsetof(SmsHeldFluddApi, player_view) + sizeof(void*) && hf->player_view)
 				hf->player_view(pl, &vx, &vy, &vw, &vh);
-			const float w = cw * vw, h = ch * vh;
-			const float x = cw * vx + w * 0.5f, y = ch * vy + h * 0.5f, rad = h * 0.46f;
-			const uint8_t a = (uint8_t)(255.0f * in);
-			draw().clip_push(cw * vx, ch * vy, w, h);
-			const float out = sqrtf(w * w + h * h) * 0.5f + 4.0f; // past the corners
-			draw().circle_outline(x, y, (rad + out) * 0.5f, out - rad, SMS_RGBA(0, 0, 0, a)); // all round the sight
-			draw().circle_outline(x, y, rad, h * 0.012f, SMS_RGBA(20, 20, 20, a));          // its rim
-			const SmsColor hair = SMS_RGBA(0, 0, 0, (uint8_t)(230.0f * in));
-			const float t = h * 0.0025f, gap = h * 0.02f;
-			draw().line(x - rad, y, x - gap, y, t, hair); // the cross hairs, open in the middle
-			draw().line(x + gap, y, x + rad, y, t, hair);
-			draw().line(x, y - rad, x, y - gap, t, hair);
-			draw().line(x, y + gap, x, y + rad, t, hair);
-			draw().line(x - rad, y, x - rad * 0.55f, y, t * 3.0f, hair); // thicker at the edge
-			draw().line(x + rad * 0.55f, y, x + rad, y, t * 3.0f, hair);
-			draw().line(x, y + rad * 0.55f, x, y + rad, t * 3.0f, hair);
-			for (int i = 1; i <= 4; i++) { // the marks
-				const float d = rad * 0.1f * (float)i, mk = h * 0.008f;
-				draw().line(x - d, y - mk, x - d, y + mk, t, hair);
-				draw().line(x + d, y - mk, x + d, y + mk, t, hair);
-				draw().line(x - mk, y + d, x + mk, y + d, t, hair);
-			}
-			draw().circle(x, y, h * 0.003f, SMS_RGBA(230, 30, 30, a));
+			draw().clip_push(cw * vx, ch * vy, cw * vw, ch * vh);
+			scopeIn(pl, cw * vx, ch * vy, cw * vw, ch * vh);
 			draw().clip_pop();
 		}
+	}
+
+	// a player's scope in a part of the canvas: black round a round sight, thin cross hairs with
+	// marks along them, a red dot in the middle, coming in with the zoom
+	void scopeIn(int pl, float vx, float vy, float w, float h)
+	{
+		For f(*this, pl);
+		if (!scopeShown())
+			return;
+		float in = (float)((core().time() - P().zoomedAt) / 0.3);
+		in       = in < 0.0f ? 0.0f : in > 1.0f ? 1.0f : in;
+		if (in < 0.05f)
+			return;
+		const float x = vx + w * 0.5f, y = vy + h * 0.5f, rad = h * 0.46f;
+		const uint8_t a = (uint8_t)(255.0f * in);
+		const float out = sqrtf(w * w + h * h) * 0.5f + 4.0f; // past the corners
+		draw().circle_outline(x, y, (rad + out) * 0.5f, out - rad, SMS_RGBA(0, 0, 0, a)); // all round the sight
+		draw().circle_outline(x, y, rad, h * 0.012f, SMS_RGBA(20, 20, 20, a));          // its rim
+		const SmsColor hair = SMS_RGBA(0, 0, 0, (uint8_t)(230.0f * in));
+		const float t = h * 0.0025f, gap = h * 0.02f;
+		draw().line(x - rad, y, x - gap, y, t, hair); // the cross hairs, open in the middle
+		draw().line(x + gap, y, x + rad, y, t, hair);
+		draw().line(x, y - rad, x, y - gap, t, hair);
+		draw().line(x, y + gap, x, y + rad, t, hair);
+		draw().line(x - rad, y, x - rad * 0.55f, y, t * 3.0f, hair); // thicker at the edge
+		draw().line(x + rad * 0.55f, y, x + rad, y, t * 3.0f, hair);
+		draw().line(x, y + rad * 0.55f, x, y + rad, t * 3.0f, hair);
+		for (int i = 1; i <= 4; i++) { // the marks
+			const float d = rad * 0.1f * (float)i, mk = h * 0.008f;
+			draw().line(x - d, y - mk, x - d, y + mk, t, hair);
+			draw().line(x + d, y - mk, x + d, y + mk, t, hair);
+			draw().line(x - mk, y + d, x + mk, y + d, t, hair);
+		}
+		draw().circle(x, y, h * 0.003f, SMS_RGBA(230, 30, 30, a));
 	}
 
 	int load() override
@@ -950,6 +959,12 @@ struct FluddWeapons : sms::Mod {
 			cur = 0;
 		});
 
+		// each view as the game draws it, before its HUD: that player's scope there (under the HUD)
+		on<SmsEvDrawUnder>(SMS_EV_DRAW_UNDER_HUD, [this](SmsEvDrawUnder& d) {
+			underAt = core().time();
+			if (d.player >= 0 && d.player < players())
+				scopeIn(d.player, 0.0f, 0.0f, d.canvas_w, d.canvas_h);
+		});
 		on<SmsEvDraw>(SMS_EV_DRAW, [this](SmsEvDraw& d) {
 			if (d.mode != SMS_MODE_STAGE)
 				return;

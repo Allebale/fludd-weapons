@@ -381,6 +381,12 @@ typedef enum SmsEventType {
 	   (sprayed, stomped, punched, ground-pounded): `result` what it made of
 	   it (1 it took it). SmsEvHitDone. */
 	SMS_EV_OBJECT_HIT_DONE = 73,
+	/* (API 1.8) Each view (split-screen co-op: each player's half) as the
+	   game draws it, after the scene and before its HUD: draw with the draw
+	   table there, under the HUD (a scope, a mask, a tint). Its canvas is the
+	   view's own, 480 high (its units square on screen). Shapes and text only
+	   (no images, no clips). SmsEvDrawUnder. */
+	SMS_EV_DRAW_UNDER_HUD = 74,
 
 	/* core->event_id hands out ids from here for mods' own events. */
 	SMS_EV_CUSTOM_BASE = 0x10000
@@ -444,6 +450,12 @@ typedef struct SmsEvDraw {
 	uint32_t frame;
 	int mode;                 /* SmsGameMode */
 } SmsEvDraw;
+
+typedef struct SmsEvDrawUnder {
+	float canvas_w, canvas_h; /* the view's canvas, 480 high */
+	int player;               /* whose view (co-op: 1 the second player's) */
+	uint32_t frame;
+} SmsEvDrawUnder;
 
 typedef struct SmsEvStage {
 	int area, episode; /* the stage: see docs/MODDING.md for the area numbers */
