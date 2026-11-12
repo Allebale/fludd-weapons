@@ -342,21 +342,22 @@ struct FluddWeapons : sms::Mod {
 		return false;
 	}
 
-	// The rocket jump key's shots (a setting, off by default): with it on, shots on walking enemies in
-	// the air defeat them (2), and while the key is held shots throw those on the ground up (1). The
-	// keyboard's key is player 1's; a controller's L anyone's.
+	// The bazooka's shots on walking enemies: in the air they defeat them at once (2, the
+	// "rocket_air_pop" setting), and while the rocket jump key is held those on the ground are thrown
+	// up (1, "rocket_key_launch"). The keyboard's key is player 1's; a controller's L anyone's.
 	int keyLaunchNow() const
 	{
+		const int pop = setting("rocket_air_pop", 1) ? 2 : 0;
 		if (!setting("rocket_key_launch", 1))
-			return 0;
+			return pop;
 		const SmsPad p = pad(cur);
 		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
-			return 3;
+			return pop | 1;
 		if (cur != 0)
-			return 2;
+			return pop;
 		const int k  = setting("rocket_jump_key", 1);
 		const int sc = input().key_from_name(kRocketKeys[k >= 0 && k < kRocketKeyCount ? k : 0]);
-		return sc > 0 && input().key_down(sc) ? 3 : 2;
+		return sc > 0 && input().key_down(sc) ? pop | 1 : pop;
 	}
 
 	// long range: how many times further than the game's own enemies are seen and move
@@ -724,7 +725,8 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 40, 1, 100, 1);
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
-		preset.optionBool("rocket_key_launch", "Bazooka air shots defeat enemies, key shots launch them", true);
+		preset.optionBool("rocket_key_launch", "Bazooka rocket jump key shots launch enemies up", true);
+		preset.optionBool("rocket_air_pop", "Bazooka shots defeat enemies in the air at once", true);
 		preset.optionNumber("rocket_key_launch_height", "Bazooka rocket jump key launch height (percent)", 80, 10, 300, 10);
 		preset.optionNumber("rocket_jump_feet", "Rocket jump forward boost off your feet (percent)", 50, 0, 300, 10);
 		preset.optionNumber("fire_goop_defeat", "Fire goop burning time before an enemy is defeated (tenths of a second)", 5, 1, 100, 1);

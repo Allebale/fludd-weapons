@@ -582,7 +582,7 @@ struct Engine {
 			if (api->actor->velocity(h.enemy, &v)) {
 				if (v.y < h.launchUp * 0.8f)
 					v.y = h.launchUp;
-				v.x *= 0.25f, v.z *= 0.25f; // (going up, hardly across)
+				v.x *= 0.4f, v.z *= 0.4f; // (going up, hardly across)
 				api->actor->set_velocity(h.enemy, &v);
 			}
 			api->actor->set_flags(h.enemy, SMS_ACTOR_FLAG_AIRBORNE, 0);
@@ -903,7 +903,7 @@ struct Engine {
 				h->launchUp    = s.keyLift > 0.0f ? s.keyLift : 30.0f;
 				SmsVec3 v;
 				if (api->actor->velocity(e, &v)) { // only a little of its own speed across the ground kept
-					v.x *= 0.25f, v.z *= 0.25f;
+					v.x *= 0.4f, v.z *= 0.4f;
 					v.y = h->launchUp;
 					api->actor->set_velocity(e, &v);
 				}
