@@ -2163,6 +2163,54 @@ enum { SMS_SPRAY_FIRE_GOOP = 5, SMS_SPRAY_ELECTRIC_GOOP = 6, SMS_SPRAY_BLACK_GOO
 #define SMS_SPRAY_GOOP_SHIFT 20 /* set_weapon's flags: (percent / 10) << 20, how much goop the weapons clean, 100 the game's own (7 bits: up to 1270); 0 the game's own */
 #define SMS_SPRAY_MUTE_MARIO (1 << 27) /* set_weapon's flags: Mario's own voice left out (a weapons mod's rocket jump key held: its cries play alone) */
 
+/* ------------------------------------------------------------------ a mod's own models (API 1.8) */
+
+/* api->models (SMS_API_HAS(api, models)): models of a mod's own, made of
+ * triangles whose corners carry their colours (their light baked in, as the
+ * GameCube's low-poly games looked), drawn with the scene (in front of and
+ * behind it by its depth), in each view (split-screen co-op: both halves).
+ * A model is drawn where a frame of the game puts it: the world, or a
+ * player's FLUDD, held in view or on his back (the model then moves with it
+ * as it is drawn, never a frame behind). Drawn only the tick it is asked
+ * for: ask each tick (SMS_EV_TICK). Nothing is drawn till a mod asks. */
+typedef struct SmsCorner {
+	float x, y, z;
+	uint8_t r, g, b, a;
+} SmsCorner;
+typedef uint32_t SmsMesh; /* a model made with models->create; 0 = none */
+
+/* models->draw's and ->frame's frames */
+enum {
+	SMS_FRAME_WORLD = 0,     /* the world itself */
+	SMS_FRAME_HELD = 1,      /* FLUDD held in view (first person, held_fludd->set): its nozzle's tip, x right,
+	                            y the way it points (to the view's aim, kicked up by held_fludd->kick), z up; drawn
+	                            in that player's own view only */
+	SMS_FRAME_BACK = 2,      /* FLUDD on his back (its nozzle's joint): x right, y the way he faces, z up, leaning
+	                            and lying with him; drawn in the views where it is on his back (co-op: a player's
+	                            held FLUDD is on his back in the other's view) */
+	SMS_FRAME_BACK_LEVEL = 3 /* the same place, turned level: y ahead across the ground, z up (lying down: y the way
+	                            his head is, z off his back) */
+};
+
+typedef struct SmsModelApi {
+	uint32_t size;
+	/* A model of `count` corners (a multiple of 3: each three a triangle), in its own units, copied.
+	   0 when it could not be made. Gone when the mod unloads. */
+	SmsMesh (*create)(SmsMod* mod, const SmsCorner* corners, int count);
+	void (*destroy)(SmsMod* mod, SmsMesh mesh);
+	/* Drawn this tick in `frame` (SMS_FRAME_*) of `player` (the world's: any), at `place` in it: its
+	   own units to the frame's (rows: x, y, z; the last column where its origin is). 1 asked. */
+	int (*draw)(SmsMesh mesh, int frame, int player, const float place[3][4]);
+	/* Triangles in the world drawn this tick only (`count` corners, a multiple of 3; copied). */
+	int (*draw_triangles)(const SmsCorner* corners, int count);
+	/* Where a frame of a player's is in the world, as it was last drawn (rows: x, y, z, its axes in
+	   the first three columns, its origin in the last): 1, 0 when it is not there (not held, no FLUDD). */
+	int (*frame)(int frame, int player, float out[3][4]);
+	/* A player's FLUDD left out of drawing this tick, where it is held in view (1 << SMS_FRAME_HELD)
+	   and on his back (1 << SMS_FRAME_BACK), ORed (a model of a mod's own in its place). */
+	void (*hide_fludd)(int player, int frames);
+} SmsModelApi;
+
 struct SmsApi {
 	uint32_t size;
 	uint16_t major, minor;
@@ -2184,6 +2232,7 @@ struct SmsApi {
 	const SmsHeldFluddApi* held_fludd; /* API 1.7 (SMS_API_HAS(api, held_fludd); check its magic) */
 	const SmsWaterApi* water;       /* API 1.8 (SMS_API_HAS(api, water)) */
 	const SmsActorApi* actor;       /* API 1.8 (SMS_API_HAS(api, actor)) */
+	const SmsModelApi* models;      /* API 1.8 (SMS_API_HAS(api, models)) */
 };
 
 /* ------------------------------------------------------------------ the mod's side */

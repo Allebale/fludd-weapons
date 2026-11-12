@@ -97,6 +97,8 @@ struct Settings {
 	bool airForward; // enemies already in the air pushed on forward, not up
 	bool bosses;     // the weapons made for bosses (Shadow Mario, Petey Piranha, Big Chain Chomp...)
 	float shadowDamage; // how much harder (above 1) or softer each hit is on Shadow Mario
+	int look;        // the bazooka's shot seen flying: 0 its water, 1 a green water balloon, 2 a big one
+	bool hearts;     // the bazooka's defeats drop a heart (first person)
 	bool enemySafe;  // the rocket jump key held: a burst that hits an enemy costs Mario no health
 	float far;       // long range: how much further enemies are seen (1 the game's own)
 };
@@ -164,6 +166,8 @@ struct Engine {
 		V bazookaAt, bazookaWay;
 		bool bazookaSeen = false;
 		int told = -1;             // the weapon last logged as fired
+		double shotAt = -10;       // its last shot (the pack's gun kicks back)
+		int shotWeapon = 0;
 	};
 	Player players[2];
 	uint32_t bursts[kMostBursts] = {}; // the shots that burst (once each)
@@ -495,9 +499,13 @@ struct Engine {
 		if (h && h->size >= offsetof(SmsHeldFluddApi, kick) + sizeof(void*) && h->kick)
 			h->kick(k.kick);
 		pl.soundUntil = time + (weapon == BAZOOKA ? 0.45 : weapon == SMG ? 0.1 : 0.3);
+		pl.shotAt     = time;
+		pl.shotWeapon = weapon;
 		if (weapon == BAZOOKA) {
 			pl.bazookaShot = shot;
 			pl.bazookaSeen = false;
+			if (st && s.look >= 1 && hasModels())
+				startBalloon(player, from, way, st->aim, s.look == 2);
 			if (st && st->aim < kBazookaNow && !burstDone(shot)) { // near: at once, not as its drop lands
 				markBurst(shot);
 				burst(player, weapon, shot, pl.bazookaAt, k, s, way);
@@ -1035,6 +1043,310 @@ struct Engine {
 			api->core->log(mod, SMS_LOG_INFO, "the bazooka's burst: %d bosses or characters, %d things", others, things);
 	}
 
+	// ---------------------------------------------------------------- looks: the bazooka's balloon, hearts
+
+	// the bazooka's green water balloon (its shot's look 1, 2 the big one): flown straight to where it
+	// bursts in as many frames as its own drop, then it pops there (its rubber in pieces, a splash)
+	struct Balloon {
+		bool on = false, big = false;
+		V from, way;
+		float aim = 0, along = 0, frames = 6;
+	};
+	Balloon balloons[2];
+	// its rubber, burst into pieces: thrown out, falling and tumbling, gone after about half a second
+	struct Piece {
+		V at, v, axis;
+		float spin = 0, turn = 0, size = 0, life = 0; // life: ticks left
+	};
+	Piece pieces[12];
+	// hearts dropped where the bazooka defeats an enemy (first person, rocket jumps on): a point of
+	// health each as Mario touches one, gone after 15 seconds (blinking the last 3)
+	struct Heart {
+		V at;
+		float vy = 0, ground = 0, spin = 0, life = 0;
+		bool landed = false;
+	};
+	Heart heartList[8];
+	SmsCorner looks[12000];
+	int lookCount   = 0;
+	int balloonTick = 0;
+
+	bool hasModels() const { return api->size >= offsetof(SmsApi, models) + sizeof(void*) && api->models; }
+
+	void startBalloon(int player, const V& from, const V& way, float aim, bool big)
+	{
+		Balloon& b = balloons[player & 1];
+		b.on       = true;
+		b.big      = big;
+		b.from     = from;
+		b.way      = way;
+		b.aim      = aim;
+		// from the muzzle (the small one comes out of it), the big one a little ahead (not over the camera)
+		b.along  = !big ? 0.0f : aim * 0.3f < 140.0f ? aim * 0.3f : 140.0f;
+		b.frames = aim < kBazookaNow ? 5.0f : 6.0f;
+	}
+
+	void dropHeart(SmsObject e)
+	{
+		SmsVec3 p;
+		if (!api->game->object_position(e, &p))
+			return;
+		Heart* h = &heartList[0];
+		for (int i = 0; i < 8; i++) { // a free one, or the oldest
+			if (heartList[i].life <= 0.0f) {
+				h = &heartList[i];
+				break;
+			}
+			if (heartList[i].life < h->life)
+				h = &heartList[i];
+		}
+		const float a = random01() * 6.2831853f; // beside it, its coin in the middle
+		h->at         = V(p.x + sinf(a) * 45.0f, p.y + 40.0f, p.z + cosf(a) * 45.0f);
+		const SmsVec3 top = V(h->at.x, h->at.y + 50.0f, h->at.z).s(), bottom = V(h->at.x, h->at.y - 3000.0f, h->at.z).s();
+		SmsVec3 hit;
+		h->ground = api->game->ray(&top, &bottom, &hit) ? hit.y : p.y;
+		h->vy     = 14.0f; // popped up
+		h->spin   = a;
+		h->life   = 450.0f;
+		h->landed = false;
+		api->core->log(mod, SMS_LOG_INFO, "a heart dropped");
+	}
+
+	// each tick: the balloons flying and popping, the pieces, the hearts falling and picked up
+	void looksTick(float dt)
+	{
+		for (int i = 0; i < 12; i++) {
+			Piece& q = pieces[i];
+			if (q.life <= 0.0f)
+				continue;
+			q.life -= dt;
+			q.v.y -= 1.6f * dt; // falling
+			q.v.x *= powf(0.92f, dt), q.v.z *= powf(0.92f, dt);
+			q.at = q.at + q.v * dt;
+			q.spin += q.turn * dt;
+		}
+		for (int p = 0; p < 2; p++) {
+			Balloon& b = balloons[p];
+			if (!b.on)
+				continue;
+			b.along += b.aim / b.frames * dt;
+			const float end = b.aim - (b.big ? 40.0f : 6.0f);
+			if (b.along < end)
+				continue;
+			b.on        = false; // there: it pops, its rubber in pieces, with a splash
+			const V at  = b.from + b.way * end;
+			const SmsVec3 sa = at.s();
+			api->game->particle(kParticleHit, &sa);
+			for (int i = 0; i < 12; i++) {
+				Piece& q = pieces[i];
+				// out every way, more back towards Mario and up than into what it hit
+				V d = V(random01() * 2.0f - 1.0f, random01() * 1.4f - 0.2f, random01() * 2.0f - 1.0f) - b.way * 0.8f;
+				d   = d.unit();
+				const float sp = (7.0f + 9.0f * random01()) * (b.big ? 1.6f : 1.0f);
+				q.at   = at;
+				q.v    = V(d.x * sp, d.y * sp + 4.0f, d.z * sp);
+				q.axis = V(random01() - 0.5f, random01() - 0.5f, random01() - 0.5f).unit();
+				q.spin = random01() * 6.28f;
+				q.turn = 0.3f + 0.5f * random01();
+				q.size = (2.5f + 2.5f * random01()) * (b.big ? 5.0f : 1.0f);
+				q.life = 12.0f + 6.0f * random01();
+			}
+		}
+		const SmsHeldFluddApi* hf = api->held_fludd;
+		const bool sel = SHOTS_HAS(hf, SmsHeldFluddApi, select_player);
+		const int np   = sel && hf->players ? hf->players() : 1;
+		for (int i = 0; i < 8; i++) {
+			Heart& h = heartList[i];
+			if (h.life <= 0.0f)
+				continue;
+			h.life -= dt;
+			h.spin += 0.08f * dt;
+			if (!h.landed) {
+				h.vy -= 1.5f * dt;
+				h.at.y += h.vy * dt;
+				if (h.at.y <= h.ground + 40.0f && h.vy < 0.0f)
+					h.at.y = h.ground + 40.0f, h.landed = true;
+			}
+			for (int p = 0; p < np && h.life > 0.0f; p++) { // either player (co-op) touching it
+				if (sel)
+					hf->select_player(p);
+				SmsPlayer m = SmsPlayer();
+				m.size      = sizeof m;
+				if (api->player->get(&m) && m.valid && !m.on_yoshi) {
+					const float dx = m.position.x - h.at.x, dz = m.position.z - h.at.z, dy = h.at.y - m.position.y;
+					if (dx * dx + dz * dz < 80.0f * 80.0f && dy > -60.0f && dy < 190.0f) {
+						h.life = 0.0f;
+						api->player->set_health(m.health + 1);
+						api->audio->play_system_sound(0x4801); // MSD_SE_SY_HP_RECOVER
+						api->core->log(mod, SMS_LOG_INFO, "a heart picked up: a point of health");
+					}
+				}
+				if (sel)
+					hf->select_player(-1);
+			}
+		}
+	}
+
+	void corner(const V& p, int r, int g, int b)
+	{
+		if (lookCount >= 12000)
+			return;
+		SmsCorner& c = looks[lookCount++];
+		c.x = p.x, c.y = p.y, c.z = p.z;
+		c.r = (uint8_t)(r < 0 ? 0 : r > 255 ? 255 : r);
+		c.g = (uint8_t)(g < 0 ? 0 : g > 255 ? 255 : g);
+		c.b = (uint8_t)(b < 0 ? 0 : b > 255 ? 255 : b);
+		c.a = 255;
+	}
+
+	// a balloon's corner: lat from -1 (its back, the knot) to 1 (its front); round, a little longer
+	// along the way, its skin wobbling, its light baked (from above), a shine on top
+	void balloonCorner(const V& c, const V& fwd, const V& rt, const V& up, float r, float len, float lat, float lon, float wob)
+	{
+		const float a = lat * 1.5707963f, ring = cosf(a), along = sinf(a);
+		const float sx = ring * cosf(lon), sy = ring * sinf(lon);
+		const float rr = r * (1.0f + 0.06f * sinf(wob + 3.0f * lon));
+		const V n      = fwd * along + rt * sx + up * sy;
+		const V p      = c + fwd * (along * len) + (rt * sx + up * sy) * rr;
+		const float l  = n.y * 0.8f + 0.35f;
+		const float d  = l > 0.0f ? (l < 1.0f ? l : 1.0f) : 0.0f;
+		const float shine = n.y > 0.88f ? (n.y - 0.88f) * 6.0f : 0.0f;
+		corner(p, (int)(20.0f + 50.0f * d + 200.0f * shine), (int)(70.0f + 170.0f * d + 120.0f * shine), (int)(25.0f + 45.0f * d + 200.0f * shine));
+	}
+
+	void drawBalloon(const Balloon& b)
+	{
+		const V c     = b.from + b.way * b.along;
+		const V fwd   = b.way;
+		V upw         = fabsf(fwd.y) > 0.95f ? V(1.0f, 0.0f, 0.0f) : V(0.0f, 1.0f, 0.0f);
+		V rt          = V(fwd.y * upw.z - fwd.z * upw.y, fwd.z * upw.x - fwd.x * upw.z, fwd.x * upw.y - fwd.y * upw.x);
+		if (rt.len() < 1e-4f)
+			return;
+		rt          = rt.unit();
+		const V up  = V(rt.y * fwd.z - rt.z * fwd.y, rt.z * fwd.x - rt.x * fwd.z, rt.x * fwd.y - rt.y * fwd.x);
+		const float scale = b.big ? 6.5f : 1.0f; // the big one: about 42 round
+		const float r = 6.5f * scale, len = 8.0f * scale;
+		const float wob = (float)(balloonTick)*0.9f;
+		const int kRings = 10, kAround = 16;
+		for (int i = 0; i < kRings; i++) {
+			const float a0 = -1.0f + 2.0f * (float)i / kRings, a1 = -1.0f + 2.0f * (float)(i + 1) / kRings;
+			for (int j = 0; j < kAround; j++) {
+				const float l0 = 6.2831853f * (float)j / kAround, l1 = 6.2831853f * (float)(j + 1) / kAround;
+				balloonCorner(c, fwd, rt, up, r, len, a0, l0, wob);
+				balloonCorner(c, fwd, rt, up, r, len, a1, l0, wob);
+				balloonCorner(c, fwd, rt, up, r, len, a1, l1, wob);
+				balloonCorner(c, fwd, rt, up, r, len, a0, l0, wob);
+				balloonCorner(c, fwd, rt, up, r, len, a1, l1, wob);
+				balloonCorner(c, fwd, rt, up, r, len, a0, l1, wob);
+			}
+		}
+		// its knot: a small dark green cone at its back
+		const V back = c - fwd * len, tip = back - fwd * (2.2f * scale);
+		for (int j = 0; j < 8; j++) {
+			const float l0 = 6.2831853f * (float)j / 8.0f, l1 = 6.2831853f * (float)(j + 1) / 8.0f, k = 1.4f * scale;
+			corner(tip, 20, 90, 30);
+			corner(back + rt * (cosf(l0) * k) + up * (sinf(l0) * k), 30, 120, 40);
+			corner(back + rt * (cosf(l1) * k) + up * (sinf(l1) * k), 30, 120, 40);
+		}
+	}
+
+	void drawPieces()
+	{
+		for (int i = 0; i < 12; i++) {
+			const Piece& q = pieces[i];
+			if (q.life <= 0.0f)
+				continue;
+			const float sz = q.size * (q.life < 4.0f ? q.life / 4.0f : 1.0f); // shrinking away at the end
+			const float cs = cosf(q.spin), sn = sinf(q.spin);
+			const V base[2] = {V(1.0f, 0.0f, 0.0f), V(0.0f, 0.0f, 1.0f)};
+			V e[2];
+			for (int k = 0; k < 2; k++) { // two edges across it, turned about its axis by its spin (Rodrigues)
+				const V& v    = base[k];
+				const float d = q.axis.dot(v);
+				const V cr    = V(q.axis.y * v.z - q.axis.z * v.y, q.axis.z * v.x - q.axis.x * v.z, q.axis.x * v.y - q.axis.y * v.x);
+				e[k]          = (v * cs + cr * sn + q.axis * (d * (1.0f - cs))) * sz;
+			}
+			const V bend = q.axis * (sz * 0.5f); // its fold
+			const V p0 = q.at - e[0], p1 = q.at + e[0], p2 = q.at + e[1] + bend, p3 = q.at - e[1] + bend;
+			const int lit = 150 + (int)(60.0f * sn); // catching the light as it turns
+			corner(p0, 30, lit, 45), corner(p1, 30, lit, 45), corner(p2, 40, lit - 40, 50);
+			corner(p0, 30, lit, 45), corner(p1, 30, lit, 45), corner(p3, 25, lit - 60, 35);
+		}
+	}
+
+	// a heart: a puffy red heart standing up, turning about its upright, about 50 tall, lit from above
+	// (baked, by the turn), a shine on its upper left lobe; from its outline (the heart curve) and two
+	// rings inside it pushed out to the front and back
+	void heartCorner(const V& c, float cs, float sn, float x, float y, float z, float nx, float ny, float nz)
+	{
+		const float k  = 1.7f;
+		const float wx = x * cs + z * sn, wz = -x * sn + z * cs;
+		const float mx = nx * cs + nz * sn, mz = -nx * sn + nz * cs;
+		const float lt = ny * 0.7f + mz * 0.45f + mx * 0.2f;
+		const float l  = 0.25f + 0.55f * (lt > 0.0f ? lt : 0.0f);
+		const float shine = (ny > 0.55f && nz * nz < 0.6f) ? 0.35f : 0.0f;
+		corner(V(c.x + wx * k, c.y + y * k, c.z + wz * k), (int)(255.0f * (l + 0.35f) + 255.0f * shine), (int)(50.0f * l + 230.0f * shine),
+		       (int)(60.0f * l + 230.0f * shine));
+	}
+	static void heartOutline(float t, float* x, float* y, float* nx, float* ny)
+	{
+		const float st = sinf(t);
+		*x = 16.0f * st * st * st;
+		*y = 13.0f * cosf(t) - 5.0f * cosf(2.0f * t) - 2.0f * cosf(3.0f * t) - cosf(4.0f * t);
+		const float dx = 48.0f * st * st * cosf(t), dy = -13.0f * st + 10.0f * sinf(2.0f * t) + 6.0f * sinf(3.0f * t) + 4.0f * sinf(4.0f * t);
+		const float l  = sqrtf(dx * dx + dy * dy) + 1e-4f;
+		*nx = dy / l, *ny = -dx / l;
+	}
+	void drawHeart(const V& c, float turn)
+	{
+		const float cs = cosf(turn), sn = sinf(turn);
+		const int kAround = 28;
+		const float ring[4] = {1.0f, 0.72f, 0.38f, 0.0f}, deep[4] = {0.0f, 0.62f, 0.9f, 1.0f};
+		for (int side = -1; side <= 1; side += 2)
+			for (int band = 0; band < 3; band++)
+				for (int j = 0; j < kAround; j++) {
+					float px[2][2], py[2][2], pz[2][2], qx[2][2], qy[2][2], qz[2][2];
+					for (int a = 0; a < 2; a++) {
+						const float t = 6.2831853f * (float)(j + a) / kAround;
+						float x, y, nx, ny;
+						heartOutline(t, &x, &y, &nx, &ny);
+						for (int k = 0; k < 2; k++) {
+							const int b2     = band + k;
+							const float f    = ring[b2], flat = 1.0f - deep[b2];
+							px[a][k] = x * f, py[a][k] = y * f + 2.0f * (1.0f - f), pz[a][k] = deep[b2] * 9.0f * side;
+							qx[a][k] = nx * flat, qy[a][k] = ny * flat, qz[a][k] = deep[b2] * side;
+						}
+					}
+					const int order[6][2] = {{0, 0}, {0, 1}, {1, 1}, {0, 0}, {1, 1}, {1, 0}};
+					for (int o = 0; o < 6; o++) {
+						const int a = order[o][0], k = order[o][1];
+						heartCorner(c, cs, sn, px[a][k], py[a][k], pz[a][k], qx[a][k], qy[a][k], qz[a][k]);
+					}
+				}
+	}
+
+	// each tick: the balloons, their pieces and the hearts drawn (api->models)
+	void looksDraw()
+	{
+		if (!hasModels())
+			return;
+		lookCount = 0;
+		balloonTick++;
+		for (int p = 0; p < 2; p++)
+			if (balloons[p].on)
+				drawBalloon(balloons[p]);
+		drawPieces();
+		for (int i = 0; i < 8; i++) {
+			const Heart& h = heartList[i];
+			if (h.life <= 0.0f || (h.life < 90.0f && ((int)(h.life / 3.0f) & 1))) // its last 3 seconds: blinking
+				continue;
+			const float bob = h.landed ? 6.0f * sinf(h.spin * 2.5f) : 0.0f;
+			drawHeart(V(h.at.x, h.at.y + bob, h.at.z), h.spin);
+		}
+		if (lookCount >= 3)
+			api->models->draw_triangles(looks, lookCount);
+	}
+
 	// ---------------------------------------------------------------- rocket jumps, pops
 
 	// The bazooka's burst near Mario (first person, rocket jumps on) throws him, as in Team Fortress 2:
@@ -1139,6 +1451,11 @@ struct Engine {
 	// a new stage: no rocket jump going on, no pops (the game forgets its model sizes too)
 	void stageReset()
 	{
+		for (int i = 0; i < 8; i++)
+			heartList[i].life = 0.0f;
+		for (int i = 0; i < 12; i++)
+			pieces[i].life = 0.0f;
+		balloons[0].on = balloons[1].on = false;
 		rocketAir    = false;
 		specialCount = 0;
 		specialsAt   = -10.0;
@@ -1296,6 +1613,8 @@ struct Engine {
 				api->core->log(mod, SMS_LOG_INFO, "an enemy in the air popped by the bazooka");
 				pop(player, e, dx, dz);
 				api->actor->defeat(e);
+				if (s.hearts)
+					dropHeart(e);
 				return;
 			}
 			if (s.keyLaunch & 1) {
@@ -1358,6 +1677,8 @@ struct Engine {
 			h->hits = 0;
 			api->core->log(mod, SMS_LOG_INFO, "an enemy defeated by the %s", kNames[weapon]);
 			api->actor->defeat(e);
+			if (weapon == BAZOOKA && s.hearts && s.inView)
+				dropHeart(e);
 		}
 	}
 

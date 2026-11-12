@@ -13,6 +13,7 @@
 #include <sms_mod.hpp>
 #include "recommended_preset.h"
 #include "shots.h"
+#include "models.h"
 
 // The weapons made for bosses and the bazooka pushing enemies in the air forward (set_weapon's
 // flags): coming in the next game, after SDK 1.7.0; an older game leaves the flags unused
@@ -102,6 +103,8 @@ struct FluddWeapons : sms::Mod {
 
 	RecommendedPreset preset{*this}; // the "Settings preset" row: Recommended (the defaults) or Custom
 	shots::Engine eng; // the shots, hits and bursts (the mod API's water drops and actors)
+	SmsMesh held[3] = {}, pack[3] = {}, packGun[3] = {}; // the weapons' models (api->models)
+	bool modelsMade = false;
 	float viewFar = 1.0f; // the long range given the game (game->set_view_distance)
 	bool playing = true; // the stage's opening is over (SMS_EV_STAGE_START): the player has the controls
 	                     // (true as the mod loads: loaded in play)
@@ -360,6 +363,72 @@ struct FluddWeapons : sms::Mod {
 		return sc > 0 && input().key_down(sc) ? pop | 1 : pop;
 	}
 
+	// The chosen weapon's own models (api->models): held in FLUDD's place in first person (FLUDD left
+	// out), and in third person (the setting) FLUDD drawn as the weapon's pack with the weapon on it,
+	// kicking back as it fires. Hidden while Mario climbs (his hands busy; FLUDD as itself on his
+	// back) and held in view once he is dead.
+	void drawModels(int pl, int w, const SmsHeldFluddState& s)
+	{
+		const SmsApi& a = api();
+		if (a.size < offsetof(SmsApi, models) + sizeof(void*) || !a.models)
+			return;
+		if (!modelsMade) {
+			modelsMade = true;
+			for (int i = 0; i < 3; i++) {
+				held[i]    = wmodels::make(a.models, handle(), wmodels::kHeld[i]);
+				pack[i]    = wmodels::make(a.models, handle(), wmodels::kPack[i]);
+				packGun[i] = wmodels::make(a.models, handle(), wmodels::kPackGun[i]);
+			}
+		}
+		const int which = w == SMS_SPRAY_RIFLE ? 0 : w == SMS_SPRAY_BAZOOKA ? 1 : w == SMS_SPRAY_SMG ? 2 : -1;
+		if (which < 0)
+			return;
+		SmsPlayer m = SmsPlayer();
+		m.size      = sizeof m;
+		if (!a.player->get(&m) || !m.valid)
+			return;
+		const uint32_t st   = m.status;
+		const uint32_t i    = st & 0x3F;
+		const bool climbing = (st & 0x1C0) == 0x140 && (i <= 0x1C || (i >= 0x28 && i <= 0x2F)); // MARIO_STATUS_TYPE_SPECIAL
+		const bool dead     = m.health <= 0;
+		int hide            = 0;
+		if (s.first_person && s.held) { // held in view: the weapon in FLUDD's place
+			hide |= 1 << SMS_FRAME_HELD;
+			if (!climbing && !dead) {
+				const float k = wmodels::kHeldScale[which];
+				const float place[3][4] = {{k, 0, 0, 0}, {0, k, 0, wmodels::kHeldAhead[which] - wmodels::kHeldMuzzle[which] * k}, {0, 0, k, 0}};
+				a.models->draw(held[which], SMS_FRAME_HELD, pl, place);
+			}
+		}
+		if (setting("third_person_models", 1) && !climbing) { // on his back (co-op: the other's view of one held too)
+			hide |= 1 << SMS_FRAME_BACK;
+			const float id[3][4] = {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}};
+			a.models->draw(pack[which], SMS_FRAME_BACK, pl, id);
+			// its gun level on top, turned about where it sits on the neck, kicking back and up as it fires
+			float B[3][4], L[3][4];
+			if (a.models->frame(SMS_FRAME_BACK, pl, B) && a.models->frame(SMS_FRAME_BACK_LEVEL, pl, L)) {
+				const float py = wmodels::kPivotY, pz = wmodels::kPivotZ;
+				float off[3]; // the pivot (the pack's 0, py, pz) in the level frame's units
+				const float pw[3] = {B[0][1] * py + B[0][2] * pz, B[1][1] * py + B[1][2] * pz, B[2][1] * py + B[2][2] * pz};
+				for (int c = 0; c < 3; c++)
+					off[c] = L[0][c] * pw[0] + L[1][c] * pw[1] + L[2][c] * pw[2];
+				const shots::Engine::Player& ep = eng.players[pl & 1];
+				const float len  = ep.shotWeapon == shots::BAZOOKA ? 0.5f : ep.shotWeapon == shots::SMG ? 0.12f : 0.35f;
+				const float t    = (float)(eng.time - ep.shotAt);
+				const float ph   = t >= 0.0f && t < len ? t / len : -1.0f;
+				const float kick = ph >= 0.0f ? (1.0f - ph) * (1.0f - ph) : 0.0f;
+				const float back = kick * wmodels::kKickBack[which], tilt = kick * wmodels::kKickTilt[which];
+				const float c = cosf(tilt), sn = sinf(tilt);
+				const float place[3][4] = {{1, 0, 0, off[0]},
+				                           {0, c, -sn, off[1] + py - (c * py - sn * pz) - back - py},
+				                           {0, sn, c, off[2] + pz - (sn * py + c * pz) - pz}};
+				a.models->draw(packGun[which], SMS_FRAME_BACK_LEVEL, pl, place);
+			}
+		}
+		if (hide)
+			a.models->hide_fludd(pl, hide);
+	}
+
 	// long range: how many times further than the game's own enemies are seen and move
 	float farNow() const
 	{
@@ -442,6 +511,8 @@ struct FluddWeapons : sms::Mod {
 			s.airForward  = setting("bazooka_air_forward", 1) != 0;
 		}
 		s.far    = farNow();
+		s.look   = setting("bazooka_projectile_look", 2);
+		s.hearts = setting("rocket_jump", 2) != 0 && setting("enemy_hearts", 1) != 0;
 		s.bosses = setting("boss_balance", 1) != 0;
 		const int sh   = setting("shadow_mario", 5);
 		s.shadowDamage = kShadowDamage[sh >= 0 && sh < kShadowCount ? sh : 2];
@@ -637,37 +708,47 @@ struct FluddWeapons : sms::Mod {
 	// marks along them and a red dot in the middle, coming in with the zoom
 	void drawScope()
 	{
-		if (!scopeShown() || state().game_scope)
-			return; // the game draws it itself, under its HUD
-		float in = (float)((core().time() - P().zoomedAt) / 0.3);
-		in       = in < 0.0f ? 0.0f : in > 1.0f ? 1.0f : in;
-		if (in < 0.05f)
-			return;
-		float w = 0, h = 0;
-		draw().canvas(&w, &h);
-		const float x = w * 0.5f, y = h * 0.5f, rad = h * 0.46f;
-		const uint8_t a = (uint8_t)(255.0f * in);
-		// (co-op: the game draws each player's scope in their part of the screen; this one only
-		// for a game that does not draw it)
-		const float out = sqrtf(x * x + y * y) + 4.0f; // past the corners
-		draw().circle_outline(x, y, (rad + out) * 0.5f, out - rad, SMS_RGBA(0, 0, 0, a)); // all round the sight
-		draw().circle_outline(x, y, rad, h * 0.012f, SMS_RGBA(20, 20, 20, a));          // its rim
-		const SmsColor hair = SMS_RGBA(0, 0, 0, (uint8_t)(230.0f * in));
-		const float t = h * 0.0025f, gap = h * 0.02f;
-		draw().line(x - rad, y, x - gap, y, t, hair); // the cross hairs, open in the middle
-		draw().line(x + gap, y, x + rad, y, t, hair);
-		draw().line(x, y - rad, x, y - gap, t, hair);
-		draw().line(x, y + gap, x, y + rad, t, hair);
-		draw().line(x - rad, y, x - rad * 0.55f, y, t * 3.0f, hair); // thicker at the edge
-		draw().line(x + rad * 0.55f, y, x + rad, y, t * 3.0f, hair);
-		draw().line(x, y + rad * 0.55f, x, y + rad, t * 3.0f, hair);
-		for (int i = 1; i <= 4; i++) { // the marks
-			const float d = rad * 0.1f * (float)i, m = h * 0.008f;
-			draw().line(x - d, y - m, x - d, y + m, t, hair);
-			draw().line(x + d, y - m, x + d, y + m, t, hair);
-			draw().line(x - m, y + d, x + m, y + d, t, hair);
+		if (state().game_scope)
+			return; // an older game draws it itself, under its HUD
+		float cw = 0, ch = 0;
+		draw().canvas(&cw, &ch);
+		for (int pl = 0; pl < players(); pl++) { // each player's in their part of the screen (co-op)
+			For f(*this, pl);
+			if (!scopeShown())
+				continue;
+			float in = (float)((core().time() - P().zoomedAt) / 0.3);
+			in       = in < 0.0f ? 0.0f : in > 1.0f ? 1.0f : in;
+			if (in < 0.05f)
+				continue;
+			float vx = 0, vy = 0, vw = 1, vh = 1;
+			const SmsHeldFluddApi* hf = api().held_fludd;
+			if (players() > 1 && hf && hf->size >= offsetof(SmsHeldFluddApi, player_view) + sizeof(void*) && hf->player_view)
+				hf->player_view(pl, &vx, &vy, &vw, &vh);
+			const float w = cw * vw, h = ch * vh;
+			const float x = cw * vx + w * 0.5f, y = ch * vy + h * 0.5f, rad = h * 0.46f;
+			const uint8_t a = (uint8_t)(255.0f * in);
+			draw().clip_push(cw * vx, ch * vy, w, h);
+			const float out = sqrtf(w * w + h * h) * 0.5f + 4.0f; // past the corners
+			draw().circle_outline(x, y, (rad + out) * 0.5f, out - rad, SMS_RGBA(0, 0, 0, a)); // all round the sight
+			draw().circle_outline(x, y, rad, h * 0.012f, SMS_RGBA(20, 20, 20, a));          // its rim
+			const SmsColor hair = SMS_RGBA(0, 0, 0, (uint8_t)(230.0f * in));
+			const float t = h * 0.0025f, gap = h * 0.02f;
+			draw().line(x - rad, y, x - gap, y, t, hair); // the cross hairs, open in the middle
+			draw().line(x + gap, y, x + rad, y, t, hair);
+			draw().line(x, y - rad, x, y - gap, t, hair);
+			draw().line(x, y + gap, x, y + rad, t, hair);
+			draw().line(x - rad, y, x - rad * 0.55f, y, t * 3.0f, hair); // thicker at the edge
+			draw().line(x + rad * 0.55f, y, x + rad, y, t * 3.0f, hair);
+			draw().line(x, y + rad * 0.55f, x, y + rad, t * 3.0f, hair);
+			for (int i = 1; i <= 4; i++) { // the marks
+				const float d = rad * 0.1f * (float)i, mk = h * 0.008f;
+				draw().line(x - d, y - mk, x - d, y + mk, t, hair);
+				draw().line(x + d, y - mk, x + d, y + mk, t, hair);
+				draw().line(x - mk, y + d, x + mk, y + d, t, hair);
+			}
+			draw().circle(x, y, h * 0.003f, SMS_RGBA(230, 30, 30, a));
+			draw().clip_pop();
 		}
-		draw().circle(x, y, h * 0.003f, SMS_RGBA(230, 30, 30, a));
 	}
 
 	int load() override
@@ -845,7 +926,10 @@ struct FluddWeapons : sms::Mod {
 					eng.setStats(w, shotSettings(w)); // (this player's view: first or third person's numbers)
 				eng.playerTurn(pl, shotWeapon(w) ? w : 0, P().rHeld && fireNow, s.first_person && s.held,
 				               eng.cur(w), eng.curSettings(w));
+				drawModels(pl, w, s);
 			}
+			eng.looksTick(dt);
+			eng.looksDraw();
 		});
 		// a player's FLUDD about to spray while a weapon of this mod's fires: none of its own stream
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int {
@@ -869,8 +953,7 @@ struct FluddWeapons : sms::Mod {
 		on<SmsEvDraw>(SMS_EV_DRAW, [this](SmsEvDraw& d) {
 			if (d.mode != SMS_MODE_STAGE)
 				return;
-			if (players() == 1)
-				drawScope();
+			drawScope(); // (co-op: each player's in their half)
 			if (core().time() > toastUntil)
 				return;
 			char text[64];
