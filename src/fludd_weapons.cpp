@@ -437,7 +437,7 @@ struct FluddWeapons : sms::Mod {
 			s.cry         = setting("rocket_jump_ouch", 1) != 0;
 			s.cryVolume   = (float)setting("rocket_jump_cry_volume", 40) / 100.0f;
 			s.keyLaunch   = keyLaunchNow();
-			s.enemySafe   = setting("rocket_jump_enemy_safe", 0) && rocketKeyHeld();
+			s.enemySafe   = setting("rocket_jump_enemy_safe", 1) && rocketKeyHeld();
 			s.keyLift     = 30.0f * (float)setting("rocket_key_launch_height", 80) / 100.0f;
 			s.airForward  = setting("bazooka_air_forward", 1) != 0;
 		}
@@ -735,7 +735,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionChoice("rocket_jump_key", "Rocket jump key",
 		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 1);
 		preset.optionBool("rocket_jump_hurt", "Rocket jumps cost Mario 1 health", true);
-		preset.optionBool("rocket_jump_enemy_safe", "No rocket jump damage when a key shot hits an enemy", false);
+		preset.optionBool("rocket_jump_enemy_safe", "No rocket jump damage when a key shot hits an enemy", true);
 		preset.optionBool("rocket_jump_ouch", "Mario cries out when a rocket jump hurts", true);
 		preset.optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 40, 1, 100, 1);
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
