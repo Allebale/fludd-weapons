@@ -1729,10 +1729,16 @@ struct Engine {
 
 	// Goop washed off round a burst: where it burst (goop on a wall too), and spots on the ground in two
 	// rings round it, each bigger the more it cleans
+	// a mod's own goop washed by a burst (the goop weapons', goop.h): its own puddles too
+	void* washCtx = 0;
+	void (*washGoop)(void* ctx, float x, float y, float z, float r) = 0;
+
 	void cleanGoop(const V& at, float r, float strength, bool none)
 	{
 		if (none)
 			return;
+		if (washGoop)
+			washGoop(washCtx, at.x, at.y, at.z, r);
 		const SmsVec3 c = at.s();
 		api->game->clean_goop(&c, r * 0.6f);
 		const float spot = r * 0.35f * (strength > 1.0f ? strength : 1.0f);

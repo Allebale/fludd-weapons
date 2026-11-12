@@ -387,6 +387,13 @@ typedef enum SmsEventType {
 	   view's own, 480 high (its units square on screen). Shapes and text only
 	   (no images, no clips). SmsEvDrawUnder. */
 	SMS_EV_DRAW_UNDER_HUD = 74,
+	/* (API 1.8) A drop touching the ground (its first touch) or a wall.
+	   Cancellable: cancel and it ends there. SmsEvWaterLand. */
+	SMS_EV_WATER_LAND = 75,
+	/* (API 1.8) Each view as its scene is drawn (co-op: each player's half):
+	   models->draw_* there draw at once, in this view only (things turned to
+	   face it: flames, a drop lit from the eye). SmsEvDrawScene. */
+	SMS_EV_DRAW_SCENE = 76,
 
 	/* core->event_id hands out ids from here for mods' own events. */
 	SMS_EV_CUSTOM_BASE = 0x10000
@@ -456,6 +463,12 @@ typedef struct SmsEvDrawUnder {
 	int player;               /* whose view (co-op: 1 the second player's) */
 	uint32_t frame;
 } SmsEvDrawUnder;
+
+typedef struct SmsEvDrawScene {
+	int view;               /* whose view (co-op: 1 the second player's) */
+	float view_mtx[3][4];   /* the world to this view (rows: right, up, back toward the viewer) */
+	SmsVec3 eye;            /* where it looks from */
+} SmsEvDrawScene;
 
 typedef struct SmsEvStage {
 	int area, episode; /* the stage: see docs/MODDING.md for the area numbers */
@@ -1181,6 +1194,10 @@ typedef struct SmsGameApi {
 	   `scale` times the game's own distances, and water drops kept that
 	   much further (1 the game's own). The furthest any mod asks for. */
 	int (*set_view_distance)(float scale);
+	/* (API 1.8; check size) A body of `radius` at `at` kept out of the walls round it, as the game
+	   keeps Mario: where it is put (`out`) and the wall's way out (`normal`, may be NULL). 1 when a
+	   wall moved it, 0 not (out is at). */
+	int (*out_of_walls)(const SmsVec3* at, float radius, SmsVec3* out, SmsVec3* normal);
 } SmsGameApi;
 
 /* game->object_set_color's `which` (API 1.5) */
@@ -1228,6 +1245,7 @@ typedef struct SmsPlayer {
 	float gravity;        /* how much faster he falls each tick in a jump (his jump's own) */
 	float intended_yaw;   /* degrees: the way the stick asks him to go (as yaw) */
 	float intended_speed; /* how far the stick is pushed, 0 to 1 */
+	int invincible;       /* (API 1.8) blinking after a hurt: nothing hurts him */
 } SmsPlayer;
 
 typedef struct SmsPlayerApi {
@@ -1272,6 +1290,9 @@ typedef struct SmsPlayerApi {
 	/* API 1.8 (check size): where his fall counts from (a landing from no
 	   higher than this never stuns him). */
 	int (*set_fall_start)(float y);
+	/* (API 1.8; check size) Burnt as by the game's fire goop: thrown up holding his bottom, a point of
+	   health (unless he is already burning or blinking). 1 when he starts burning. */
+	int (*burn)(void);
 } SmsPlayerApi;
 
 /* player->set_hidden_parts (API 1.5) */
@@ -1932,6 +1953,8 @@ typedef struct SmsHeldFluddState {
 	                     weapons mod leaves its own out); 0 an older game, where a mod draws it */
 } SmsHeldFluddState;
 
+typedef uint32_t SmsTexture; /* (API 1.8) a picture made with models->texture_create; 0 = none */
+
 typedef struct SmsHeldFluddApi {
 	uint32_t size;
 	uint32_t magic; /* SMS_HELD_FLUDD_MAGIC */
@@ -1980,6 +2003,10 @@ typedef struct SmsHeldFluddApi {
 	/* (API 1.8) Where the view held FLUDD points along starts (the camera) and its way, the middle
 	   of the view: 1 while FLUDD is held in view. (Check size: SMS_API_HAS(held_fludd, aim).) */
 	int (*aim)(SmsVec3* eye, SmsVec3* forward);
+	/* (API 1.8; check size) A player's FLUDD (its body and nozzles) shown in `texture` in place of
+	   each of its own pictures (models->texture_update changes it as it is shown); 0 its own again,
+	   as does the mod unloading. 1 done. */
+	int (*dress)(int player, SmsTexture texture);
 } SmsHeldFluddApi;
 
 /* ------------------------------------------------------------------ FLUDD's water drops (API 1.8) */
@@ -2005,13 +2032,27 @@ struct SmsWaterDrop {
 	float rate;             /* nozzle_drop: the tank's water one drop of its stream uses */
 	int landed;             /* get: 0 flying, 1 on the ground, 2 on a wall */
 	float clean;            /* get: how far round it washes goop off as it lands (its kind of drop's own) */
+	int unseen;             /* (API 1.8) left out of the water's drawing (a mod draws it itself) */
 };
 
 typedef struct SmsEvWaterEmit {
 	int player;             /* whose FLUDD (co-op: 0 or 1) */
 	int count;              /* drops asked for */
-	SmsWaterDrop drop;      /* the first of them */
+	SmsWaterDrop drop;      /* the first of them. A handler may set its tag and unseen: the game's
+	                           drops then carry them (a mod's stream of its own look, FLUDD's own) */
 } SmsEvWaterEmit;
+
+/* SMS_EV_WATER_LAND (API 1.8): a drop touching the ground (as it first lands) or a wall */
+typedef struct SmsEvWaterLand {
+	int slot;               /* water->get's */
+	uint32_t tag;           /* its mod's number (0 the game's own) */
+	int player;             /* whose, -1 none */
+	SmsVec3 position;
+	SmsVec3 normal;         /* the ground's or the wall's way out */
+	int wall;               /* 1 a wall, 0 the ground */
+	SmsObject on;           /* what it landed on when that moves (a Phantamanta's back), else NULL */
+	float drop_size;
+} SmsEvWaterLand;
 
 typedef struct SmsWaterApi {
 	uint32_t size;
@@ -2113,7 +2154,22 @@ typedef struct SmsActorApi {
 	/* Knocked as by a blast pushing `push` (units a tick): a ball or a fruit thrown that way and up
 	   (a fruit off its tree too). 1 done, 0 not one of those or not now (held, appearing, rotting). */
 	int (*knock)(SmsObject object, const SmsVec3* push);
+	/* Put at `at` (an enemy carried along a path of a mod's), turned to face `yaw` degrees (as
+	   SmsPlayer's yaw). 1 done. */
+	int (*set_position)(SmsObject actor, const SmsVec3* at);
+	int (*set_yaw)(SmsObject actor, float degrees);
+	/* How much faster it falls each tick (its own gravity), 0 none known */
+	float (*gravity)(SmsObject actor);
+	/* The game's own effect on it this tick (ask each tick it lasts): SMS_EFFECT_*. 1 done. */
+	int (*effect)(SmsObject actor, int effect);
 } SmsActorApi;
+
+/* actor->effect (API 1.8) */
+enum {
+	SMS_EFFECT_BURNING = 1, /* flames on it (a burning Strollin' Stu's) */
+	SMS_EFFECT_SHOCKED = 2, /* sparks on it (Mario's own when shocked) */
+	SMS_EFFECT_SMOKE = 3    /* a puff of smoke (a fire put out): once */
+};
 
 /* actor->kind (API 1.8) */
 enum {
@@ -2190,6 +2246,12 @@ typedef struct SmsCorner {
 	uint8_t r, g, b, a;
 } SmsCorner;
 typedef uint32_t SmsMesh; /* a model made with models->create; 0 = none */
+/* a corner of a triangle with a picture (models->draw_textured): where, where in the picture (u, v:
+   0 to 1 across it, repeating past), and its colour (times the picture's) */
+typedef struct SmsTexCorner {
+	float x, y, z, u, v;
+	uint8_t r, g, b, a;
+} SmsTexCorner;
 
 /* models->draw's and ->frame's frames */
 enum {
@@ -2221,7 +2283,25 @@ typedef struct SmsModelApi {
 	/* A player's FLUDD left out of drawing this tick, where it is held in view (1 << SMS_FRAME_HELD)
 	   and on his back (1 << SMS_FRAME_BACK), ORed (a model of a mod's own in its place). */
 	void (*hide_fludd)(int player, int frames);
+	/* A picture of the mod's own (RGBA, 8 bits each, rows from the top; `w` and `h` powers of two up
+	   to 512), copied, repeating across the triangles it is laid on. 0 when it could not be made.
+	   Gone when the mod unloads. */
+	SmsTexture (*texture_create)(SmsMod* mod, const uint8_t* rgba, int w, int h);
+	/* Its picture changed (the same size): what it is laid on shows the new one */
+	int (*texture_update)(SmsMod* mod, SmsTexture texture, const uint8_t* rgba);
+	void (*texture_destroy)(SmsMod* mod, SmsTexture texture);
+	/* Triangles in the world with a picture (`texture`, 0 none: their colours alone), its colour
+	   times each corner's, drawn this tick (in SMS_EV_DRAW_SCENE: at once, in that view): `blend`
+	   SMS_BLEND_*. Copied. */
+	int (*draw_textured)(const SmsTexCorner* corners, int count, SmsTexture texture, int blend);
 } SmsModelApi;
+
+/* models->draw_textured's blending (API 1.8) */
+enum {
+	SMS_BLEND_SOLID = 0, /* hides what is behind it (in front of and behind the scene by its depth) */
+	SMS_BLEND_ALPHA = 1, /* see-through by its alpha (behind the scene's own in front of it) */
+	SMS_BLEND_ADD = 2    /* added to what is behind it: light, glow, flames */
+};
 
 struct SmsApi {
 	uint32_t size;

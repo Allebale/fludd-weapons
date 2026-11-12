@@ -14,6 +14,7 @@
 #include "recommended_preset.h"
 #include "shots.h"
 #include "models.h"
+#include "goop.h"
 
 // The weapons made for bosses and the bazooka pushing enemies in the air forward (set_weapon's
 // flags): coming in the next game, after SDK 1.7.0; an older game leaves the flags unused
@@ -103,6 +104,7 @@ struct FluddWeapons : sms::Mod {
 
 	RecommendedPreset preset{*this}; // the "Settings preset" row: Recommended (the defaults) or Custom
 	shots::Engine eng; // the shots, hits and bursts (the mod API's water drops and actors)
+	goop::Goop gp;     // the goop weapons (the mod API's tagged drops, landings, pictures)
 	SmsMesh held[3] = {}, pack[3] = {}, packGun[3] = {}; // the weapons' models (api->models)
 	bool modelsMade = false;
 	double underAt  = -10.0; // the last SMS_EV_DRAW_UNDER_HUD (the game draws mods under its HUD)
@@ -430,6 +432,37 @@ struct FluddWeapons : sms::Mod {
 			a.models->hide_fludd(pl, hide);
 	}
 
+	// the goop weapons the mod's own (this game's API has their tools): FLUDD's stream made goop here
+	bool ownGoop() const
+	{
+		const SmsApi& a = api();
+		const SmsHeldFluddApi* h = a.held_fludd;
+		return ownShots() && gp.hasPictures() && h && h->size >= offsetof(SmsHeldFluddApi, dress) + sizeof(void*) && h->dress;
+	}
+
+	// the goop weapons' numbers (the menu)
+	void goopSettings()
+	{
+		static const int kDefeat[3] = {5, 12, 12}, kLife[3] = {20, 20, 90}, kSize[3] = {130, 130, 160};
+		static const int kHits[3] = {3, 1, 1}, kWater[3] = {250, 200, 200};
+		for (int g = 0; g < 3; g++) {
+			const std::string key(g == 2 ? "black_goop" : g ? "electric_goop" : "fire_goop");
+			goop::Stats& st = gp.set.kinds[g];
+			st.defeat       = (float)setting((key + "_defeat").c_str(), kDefeat[g]) / 10.0f;
+			st.life         = (float)setting((key + "_life").c_str(), kLife[g]);
+			st.size         = (float)setting((key + "_size").c_str(), kSize[g]) / 100.0f;
+			st.hits         = setting((key + "_hits").c_str(), kHits[g]);
+			st.water        = (float)setting((key + "_water").c_str(), kWater[g]) / 100.0f;
+		}
+		gp.set.blackSpeed = (float)setting("black_goop_speed", 500) / 100.0f;
+		gp.set.airTurn    = (float)setting("black_goop_air_turn", 30) / 100.0f;
+		gp.set.wallLife   = (float)setting("goop_wall_life", 15);
+		gp.set.walls      = setting("goop_walls", 1) != 0;
+		gp.set.npcs       = setting("goop_characters", 1) != 0;
+		gp.set.defeat     = setting("weapons_defeat", 1) != 0;
+		gp.set.cheap      = setting("goop_performance", 0) != 0;
+	}
+
 	// long range: how many times further than the game's own enemies are seen and move
 	float farNow() const
 	{
@@ -649,7 +682,7 @@ struct FluddWeapons : sms::Mod {
 			told = true;
 		}
 		const SmsHeldFluddState s = state();
-		const int w               = weaponNow();
+		const int w               = ownGoop() && isGoop(weaponNow()) ? 0 : weaponNow(); // (the mod's own goop: FLUDD to the game)
 		const bool own            = ownShots() && shotWeapon(w); // this mod fires it (the game only shows it)
 		const int defeat          = (setting("weapons_defeat", 1) ? SMS_SPRAY_DEFEAT : 0) | (P().rHeld && !own ? 2 : 0)
 		                 | (setting("boss_balance", 1) ? SMS_SPRAY_BOSSES : 0);
@@ -890,12 +923,17 @@ struct FluddWeapons : sms::Mod {
 		// this mod's own shots (a game with the mod API's water drops and actors)
 		eng.api = &api();
 		eng.mod = handle();
+		gp.api  = &api();
+		gp.mod  = handle();
+		eng.washCtx  = &gp;
+		eng.washGoop = [](void* g, float x, float y, float z, float r) { static_cast<goop::Goop*>(g)->washBurst(x, y, z, r); };
 		if (ownShots())
 			info("the weapons' shots made by this mod (the game's water drops and actors)");
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent& ev) {
 			const SmsEvStage* st = ev.data && ev.size >= offsetof(SmsEvStage, reason) + sizeof(int) ? (const SmsEvStage*)ev.data : nullptr;
 			playing = st && st->reason == SMS_LEAVE_STATE_LOAD; // (a save state's load: straight into play)
 			eng.stageReset();
+			gp.stageReset();
 		});
 		on(SMS_EV_STAGE_START, [this](SmsEvent&) { playing = true; });
 		// the bazooka with the rocket jump keys held: Mario's own voice (MSD_SE_MA_VO_* to MSD_SE_MV_*)
@@ -939,18 +977,61 @@ struct FluddWeapons : sms::Mod {
 			}
 			eng.looksTick(dt);
 			eng.looksDraw();
+			if (ownGoop()) {
+				goopSettings();
+				int kinds[2]  = {0, 0};
+				bool held[2]  = {false, false};
+				for (int pl = 0; pl < players() && pl < 2; pl++) {
+					For f(*this, pl);
+					const int w = weaponNow();
+					kinds[pl]   = isGoop(w) ? w : 0;
+					held[pl]    = state().first_person && state().held;
+				}
+				gp.tick(dt, kinds, held);
+			}
 		});
 		// a player's FLUDD about to spray while a weapon of this mod's fires: none of its own stream
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int {
 			if (!ownShots() || e.player < 0 || e.player >= players())
 				return SMS_CONTINUE;
 			For f(*this, e.player);
-			return shotWeapon(weaponNow()) ? SMS_CANCEL : SMS_CONTINUE;
+			const int w = weaponNow();
+			if (ownGoop()) // a goop weapon: FLUDD's own stream made goop (none: its water)
+				gp.onEmit(e, isGoop(w) && !shotWeapon(w) ? w : 0);
+			return shotWeapon(w) ? SMS_CANCEL : SMS_CONTINUE;
 		});
-		on<SmsEvHit>(SMS_EV_OBJECT_HIT, [this](SmsEvHit& e) -> int { return ownShots() ? eng.onHit(e) : SMS_CONTINUE; });
+		// a drop landing: goop leaves goop, water washes it (the SMG's shot a good splash, the
+		// bazooka's none with the rocket jump keys held)
+		on<SmsEvWaterLand>(SMS_EV_WATER_LAND, [this](SmsEvWaterLand& e) -> int {
+			if (!ownGoop())
+				return SMS_CONTINUE;
+			int wash = 1;
+			if ((e.tag & 0xFF000000u) == 0x5A000000u) {
+				const int weapon = (int)((e.tag >> 20) & 7);
+				if (weapon == shots::SMG)
+					wash = 2;
+				if (weapon == shots::BAZOOKA && muteKeysHeld())
+					wash = 0;
+				if (weapon == shots::PIECES)
+					wash = 0;
+			}
+			return gp.onLand(e, wash);
+		});
+		// each view as its scene is drawn: the goop there
+		on<SmsEvDrawScene>(SMS_EV_DRAW_SCENE, [this](SmsEvDrawScene& e) {
+			if (ownGoop())
+				gp.draw(e);
+		});
+		on<SmsEvHit>(SMS_EV_OBJECT_HIT, [this](SmsEvHit& e) -> int {
+			if (ownGoop() && gp.onHit(e) == SMS_CANCEL)
+				return SMS_CANCEL;
+			return ownShots() ? eng.onHit(e) : SMS_CONTINUE;
+		});
 		on<SmsEvHitDone>(SMS_EV_OBJECT_HIT_DONE, [this](SmsEvHitDone& e) {
 			if (ownShots())
 				eng.onHitDone(e);
+			if (ownGoop())
+				gp.onHitDone(e);
 		});
 
 		on<SmsEvCamera>(SMS_EV_CAMERA, [this](SmsEvCamera&) {
