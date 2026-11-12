@@ -99,6 +99,7 @@ struct Settings {
 	float shadowDamage; // how much harder (above 1) or softer each hit is on Shadow Mario
 	int look;        // the bazooka's shot seen flying: 0 its water, 1 a green water balloon, 2 a big one
 	bool hearts;     // the bazooka's defeats drop a heart (first person)
+	bool keepPictures; // the bazooka leaves graffiti symbols (hiding pictures) to FLUDD
 	bool enemySafe;  // the rocket jump key held: a burst that hits an enemy costs Mario no health
 	float far;       // long range: how much further enemies are seen (1 the game's own)
 };
@@ -436,11 +437,6 @@ struct Engine {
 			eye = V(se), f = V(sf);
 		else if (!thirdView(weapon, &eye, &f))
 			return false;
-		else { // third person aimed up or down (the game's Y look, R and the stick): the game's own spray's way
-			const V g = V(d.velocity).unit();
-			if (fabsf(g.y) > 0.15f)
-				f = g;
-		}
 		pl.ready = time + k.every;
 		const uint32_t number = nextShot++;
 		const uint32_t tag    = tagOf(player, weapon, number);
@@ -983,7 +979,8 @@ struct Engine {
 			}
 		} else if (kd == SMS_KIND_HIDING_PICTURE && result && meter(o, &m) && m.open) {
 			// a weapon's few drops each wash as much as a moment of FLUDD's stream (the bazooka's at once)
-			setMeter(o, weapon == BAZOOKA ? 0 : m.left - (weapon == RIFLE ? 120 : 15), false);
+			if (weapon != BAZOOKA || !s.keepPictures)
+				setMeter(o, weapon == BAZOOKA ? 0 : m.left - (weapon == RIFLE ? 120 : 15), false);
 		} else if (kd == SMS_KIND_SHADOW_MARIO && cur(weapon).burst <= 0.0f) {
 			shadowHit(o, weapon, shot, true);
 		} else if (s.bosses && kd == SMS_KIND_PETEY_PIRANHA && meter(o, &m)) {
@@ -1023,7 +1020,7 @@ struct Engine {
 					continue;
 				const float x = p.x - at.x, y = p.y - at.y, z = p.z - at.z, d = sqrtf(x * x + z * z);
 				if (kd == SMS_KIND_HIDING_PICTURE) {
-					if (d <= r * 1.5f && fabsf(y) <= r * 1.5f && meter(o, &m) && m.open) {
+					if (!s.keepPictures && d <= r * 1.5f && fabsf(y) <= r * 1.5f && meter(o, &m) && m.open) {
 						setMeter(o, 0, true);
 						api->core->log(mod, SMS_LOG_INFO, "a picture washed off by the bazooka");
 					}

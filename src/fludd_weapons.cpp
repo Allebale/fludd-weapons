@@ -531,6 +531,7 @@ struct FluddWeapons : sms::Mod {
 			s.cryVolume   = (float)setting("rocket_jump_cry_volume", 40) / 100.0f;
 			s.keyLaunch   = keyLaunchNow();
 			s.enemySafe   = setting("rocket_jump_enemy_safe", 1) && rocketKeyHeld();
+			s.keepPictures = setting("bazooka_keeps_symbols", 1) != 0;
 			s.keyLift     = 30.0f * (float)setting("rocket_key_launch_height", 80) / 100.0f;
 			s.airForward  = setting("bazooka_air_forward", 1) != 0;
 		}
@@ -707,6 +708,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("smg_goop", "Goop the Submachine gun cleans (percent)", 100, 100, 1000, 10);
 		preset.optionNumber("bazooka_goop", "Goop the Bazooka cleans (percent)", 400, 100, 1000, 10);
 		preset.optionNumber("bazooka_goop_area", "Bazooka goop area (percent)", 400, 10, 1000, 10);
+		preset.optionBool("bazooka_keeps_symbols", "Bazooka leaves graffiti symbols for FLUDD to clean", true);
 		preset.optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up", true);
 		preset.optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
