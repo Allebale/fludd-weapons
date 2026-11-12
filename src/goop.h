@@ -54,7 +54,7 @@ struct Settings {
 	bool walls       = true;    // goop sticks to walls
 	bool npcs        = true;    // friendly characters shocked and burnt (never defeated)
 	bool defeat      = true;    // enemies defeated by it
-	int quality      = 3;       // its look: 0 very low (simplest puddles, fewest flames) to 4 very high
+	int quality      = 2;       // its look: 0 very low (simplest puddles, fewest flames) to 4 very high
 	const Stats& of(int kind) const { return kinds[kind == kElectric ? 1 : kind == kBlack ? 2 : 0]; }
 };
 
