@@ -2099,8 +2099,7 @@ typedef struct SmsActorApi {
 	/* Ticks till it takes water again (a Phantamanta's, a tooth's wait between hits) set: 1 done. */
 	int (*set_water_wait)(SmsObject object, int ticks);
 	/* Knocked as by a blast pushing `push` (units a tick): a ball or a fruit thrown that way and up
-	   (a fruit off its tree too), a tree's leaves swaying (by its length). 1 done, 0 not one of
-	   those or not now (held, appearing, rotting). */
+	   (a fruit off its tree too). 1 done, 0 not one of those or not now (held, appearing, rotting). */
 	int (*knock)(SmsObject object, const SmsVec3* push);
 } SmsActorApi;
 
@@ -2117,8 +2116,7 @@ enum {
 	SMS_KIND_PROTO_PIRANHA = 8,   /* or its mouth */
 	SMS_KIND_PETEY_PIRANHA = 9,   /* or his head */
 	SMS_KIND_HIDING_PICTURE = 10, /* a picture water washes off to find what it hides (a red X, an M) */
-	SMS_KIND_BALL = 11,           /* a ball or a fruit */
-	SMS_KIND_TREE = 12
+	SMS_KIND_BALL = 11            /* a ball or a fruit */
 };
 
 /* actor->water_meter (API 1.8). Set `size` to sizeof before calling. */

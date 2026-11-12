@@ -920,7 +920,7 @@ struct Engine {
 
 	// The bazooka's burst on all but small enemies: Shadow Mario (his hitbox bigger), Petey's open
 	// mouth, Proto Piranha, Eely-Mouth's teeth, Phantamantas, Big Chain Chomp, characters washed,
-	// hiding pictures washed off, balls and fruit thrown, trees' leaves swaying
+	// hiding pictures washed off, balls and fruit thrown
 	void burstOthers(int player, int weapon, uint32_t shot, const V& at, float r, const Settings& s)
 	{
 		if (!hasKinds())
@@ -937,7 +937,7 @@ struct Engine {
 			SmsWaterMeter m;
 			if (kd == SMS_KIND_SMALL_ENEMY || kd == SMS_KIND_OTHER)
 				continue;
-			if (kd == SMS_KIND_BALL || kd == SMS_KIND_TREE || kd == SMS_KIND_HIDING_PICTURE) {
+			if (kd == SMS_KIND_BALL || kd == SMS_KIND_HIDING_PICTURE) {
 				SmsVec3 p;
 				if (!api->game->object_position(o, &p))
 					continue;
@@ -953,12 +953,9 @@ struct Engine {
 					continue;
 				const float near1 = 1.0f - d / (r * 1.3f); // 1 at the middle, 0 at the edge
 				SmsVec3 push;
-				if (kd == SMS_KIND_BALL) {
-					const float out = lift * 0.55f * (0.35f + 0.65f * near1);
-					push.x = (d > 1.0f ? x / d : 1.0f) * out, push.z = (d > 1.0f ? z / d : 0.0f) * out;
-					push.y = lift * 0.5f * (0.4f + 0.6f * near1);
-				} else
-					push.x = 0.0f, push.y = 10.0f * (0.5f + near1), push.z = 0.0f;
+				const float out = lift * 0.55f * (0.35f + 0.65f * near1);
+				push.x = (d > 1.0f ? x / d : 1.0f) * out, push.z = (d > 1.0f ? z / d : 0.0f) * out;
+				push.y = lift * 0.5f * (0.4f + 0.6f * near1);
 				things += api->actor->knock(o, &push);
 				continue;
 			}
