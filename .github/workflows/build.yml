@@ -124,9 +124,15 @@ jobs:
               exit 0
             fi
           fi
+          if [[ -f RELEASE_NOTES.md ]]; then
+            cp RELEASE_NOTES.md notes.md   # this version's changelog
+          else
           cat > notes.md <<'NOTES'
           Unzip into the game's `mods` folder.
 
           Needs a game build with `api->held_fludd` (Allebale's First Person builds). Works on its own or with the First Person mod (https://github.com/Allebale/sms-first-person-mod).
           NOTES
-          gh release create "$tag" zip/*.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "FLUDD Weapons $tag" --notes-file notes.md
+          fi
+          # .github/prerelease there: a pre-release (never the latest, so the launcher keeps the last full one)
+          pre=(); [[ -f .github/prerelease ]] && pre=(--prerelease --latest=false)
+          gh release create "$tag" zip/*.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "FLUDD Weapons $tag" --notes-file notes.md "${pre[@]}"

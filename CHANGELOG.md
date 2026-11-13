@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1 (pre-release)
+
+- **Bazooka shots defeat enemies in the air at once** is now Off by default (and in the Recommended preset).
+
 ## 1.3.0 (pre-release)
 
 Needs the launcher's Beta build of the game (Mod API 1.8 beta 2 or newer). On the stable game, use 1.0.3.
