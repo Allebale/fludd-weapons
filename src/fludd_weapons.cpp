@@ -148,11 +148,13 @@ struct FluddWeapons : sms::Mod {
 		{
 			m.cur = p;
 			m.select(p);
+			m.eng.selected = p;
 		}
 		~For()
 		{
 			m.cur = saved;
 			m.select(-1);
+			m.eng.selected = -1;
 		}
 	};
 

@@ -121,6 +121,26 @@ struct Engine {
 	double time       = 0; // seconds played (ticks)
 	uint32_t nextShot = 1;
 	uint32_t seed     = 12345u;
+	int selected      = -1; // the player the game's player tools are for now (co-op; -1 the game's own)
+
+	// co-op: the shooter's own place, facing and health while their shot's hit or burst is worked out
+	struct Shooter {
+		Engine& e;
+		int saved;
+		bool on;
+		Shooter(Engine& en, int player) : e(en), saved(en.selected), on(false)
+		{
+			const SmsHeldFluddApi* h = e.api ? e.api->held_fludd : nullptr;
+			on = SHOTS_HAS(h, SmsHeldFluddApi, select_player) && player >= 0 && player != saved;
+			if (on)
+				h->select_player(player), e.selected = player;
+		}
+		~Shooter()
+		{
+			if (on)
+				e.api->held_fludd->select_player(saved), e.selected = saved;
+		}
+	};
 
 	// a straight shot in flight (the rifle's, submachine gun's and bazooka's)
 	struct Straight {
@@ -1642,7 +1662,7 @@ struct Engine {
 
 	void hitEnemy(SmsObject e, int player, int weapon, uint32_t shot, float dx, float dz)
 	{
-		(void)player;
+		Shooter by(*this, player);
 		const uint32_t f = api->actor->flags(e);
 		if (!f || (f & SMS_ACTOR_FLAG_DEAD) || !(f & SMS_ACTOR_FLAG_SMALL_ENEMY))
 			return;
@@ -1813,6 +1833,7 @@ struct Engine {
 	// (way: the shot's own way across the ground, for an enemy right in the middle of it)
 	void burst(int player, int weapon, uint32_t shot, const V& at, const Weapon& k, const Settings& s, V way = V())
 	{
+		Shooter by(*this, player);
 		const float wl = sqrtf(way.x * way.x + way.z * way.z);
 		const float wx = wl > 1e-3f ? way.x / wl : 0.0f, wz = wl > 1e-3f ? way.z / wl : 0.0f;
 		const float r = k.burst;
