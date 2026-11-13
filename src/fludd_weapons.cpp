@@ -334,7 +334,7 @@ struct FluddWeapons : sms::Mod {
 	// up (1, "rocket_key_launch"). The keyboard's key is player 1's; a controller's L anyone's.
 	int keyLaunchNow() const
 	{
-		const int pop = setting("rocket_air_pop", 0) ? 2 : 0;
+		const int pop = setting("rocket_air_pop", 1) ? 2 : 0;
 		if (!setting("rocket_key_launch", 1))
 			return pop;
 		const SmsPad p = pad(cur);
@@ -723,7 +723,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 		preset.optionBool("rocket_key_launch", "Bazooka rocket jump key shots launch enemies up", true);
-		preset.optionBool("rocket_air_pop", "Bazooka shots defeat enemies in the air at once", false);
+		preset.optionBool("rocket_air_pop", "Bazooka shots defeat enemies in the air at once", true);
 		preset.optionNumber("rocket_key_launch_height", "Bazooka rocket jump key launch height (percent)", 80, 10, 300, 10);
 		preset.optionNumber("rocket_jump_feet", "Rocket jump forward boost off your feet (percent)", 50, 0, 300, 10);
 		preset.optionNumber("fire_goop_defeat", "Fire goop burning time before an enemy is defeated (tenths of a second)", 5, 1, 100, 1);
