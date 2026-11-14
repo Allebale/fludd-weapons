@@ -1016,13 +1016,11 @@ struct FluddWeapons : sms::Mod {
 			if (api().player->get(&m) && m.valid && m.in_water)
 				unlockWeapons(1u << 5, "Electric goop picked up");
 		});
-		// the stage's first blue coin gives the Black goop
+		// a 1-Up gives a weapon not had yet
 		on<SmsEvItem>(SMS_EV_ITEM_COLLECTED, [this](SmsEvItem& e) {
 			if (!setting("weapons_from_nozzles", 1) || !playing)
 				return;
-			if (e.kind == SMS_ITEM_BLUE_COIN)
-				unlockWeapons(1u << 6, "Black goop picked up");
-			else if (e.kind == SMS_ITEM_ONE_UP) { // a 1-Up: one weapon not had yet, by chance
+			if (e.kind == SMS_ITEM_ONE_UP) { // a 1-Up: one weapon not had yet, by chance
 				int left[kWeaponCount], n = 0;
 				for (int w = 1; w < kWeaponCount; w++)
 					if (!(unlocked & (1u << w)))
