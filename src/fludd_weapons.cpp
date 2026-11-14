@@ -980,6 +980,20 @@ struct FluddWeapons : sms::Mod {
 					unlockWeapons(1u << 5, "Electric goop picked up");
 			}
 		});
+		// hurt by toxic water (the stage's damaging water: hurt by the ground, not by something, while
+		// in water) gives the Electric goop too
+		on(SMS_EV_PLAYER_DAMAGE, [this](SmsEvent& ev) {
+			if (!setting("weapons_from_nozzles", 1) || !playing || !ev.data
+			    || ev.size < offsetof(SmsEvDamage, source) + sizeof(SmsObject))
+				return;
+			const SmsEvDamage& d = *(const SmsEvDamage*)ev.data;
+			if (d.underwater || d.source || d.amount <= 0)
+				return;
+			SmsPlayer m = SmsPlayer();
+			m.size      = sizeof m;
+			if (api().player->get(&m) && m.valid && m.in_water)
+				unlockWeapons(1u << 5, "Electric goop picked up");
+		});
 		// the stage's first blue coin gives the Black goop
 		on<SmsEvItem>(SMS_EV_ITEM_COLLECTED, [this](SmsEvItem& e) {
 			if (setting("weapons_from_nozzles", 1) && playing && e.kind == SMS_ITEM_BLUE_COIN)
