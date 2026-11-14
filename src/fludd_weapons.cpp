@@ -973,7 +973,7 @@ struct FluddWeapons : sms::Mod {
 		on(SMS_EV_TICK, [this](SmsEvent&) {
 			if (!setting("weapons_from_nozzles", 1) || !playing)
 				return;
-			if (api().game->coins && api().game->coins() >= 99) // 99 coins: every weapon
+			if (api().game->coins && api().game->coins() >= 60) // 60 coins: every weapon
 				unlockWeapons(0x7Eu, "Every weapon picked up");
 			for (int pl = 0; pl < players(); pl++) {
 				For f(*this, pl);
