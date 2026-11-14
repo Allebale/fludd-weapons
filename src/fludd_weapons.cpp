@@ -187,7 +187,7 @@ struct FluddWeapons : sms::Mod {
 			return true;
 		char key[32];
 		snprintf(key, sizeof key, "weapon_on_%d", w);
-		if (setting("weapons_from_nozzles", 0) && !(unlocked & (1u << w))) // not picked up in this stage yet
+		if (setting("weapons_from_nozzles", 1) && !(unlocked & (1u << w))) // not picked up in this stage yet
 			return false;
 		return setting(key, 1) != 0;
 	}
@@ -779,7 +779,7 @@ struct FluddWeapons : sms::Mod {
 	{
 		preset.addRow();
 		preset.optionBool("weapons", "FLUDD weapons, D-pad left and right", true);
-		preset.optionBool("weapons_from_nozzles", "Weapons come from nozzles (each level starts without them)", false);
+		preset.optionBool("weapons_from_nozzles", "Weapons come from nozzles (each level starts without them)", true);
 		preset.optionBool("weapon_on_1", "Rifle on", true);
 		preset.optionBool("weapon_on_2", "Submachine gun on", true);
 		preset.optionBool("weapon_on_3", "Bazooka on", true);
@@ -944,7 +944,7 @@ struct FluddWeapons : sms::Mod {
 		// a nozzle picked up (out of its box or lying in the stage), not getting off Yoshi (his juice
 		// to the hover) nor a nozzle the stage or a cutscene gives
 		on<SmsEvPlayerNozzle>(SMS_EV_PLAYER_NOZZLE, [this](SmsEvPlayerNozzle& e) -> int {
-			if (setting("weapons_from_nozzles", 0) && e.reason == SMS_NOZZLE_SWITCH && e.from != 3 && e.from != -1 && playing)
+			if (setting("weapons_from_nozzles", 1) && e.reason == SMS_NOZZLE_SWITCH && e.from != 3 && e.from != -1 && playing)
 				nozzlePicked(e.to);
 			return SMS_CONTINUE;
 		});
