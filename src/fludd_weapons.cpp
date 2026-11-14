@@ -1117,10 +1117,6 @@ struct FluddWeapons : sms::Mod {
 				gp.draw(e);
 		});
 		on<SmsEvHit>(SMS_EV_OBJECT_HIT, [this](SmsEvHit& e) -> int {
-			// a hit on Proto Piranha gives the Black goop
-			if (e.object && setting("weapons_from_nozzles", 1) && playing && SMS_API_HAS(api().actor, kind)
-			    && api().actor->kind(e.object) == SMS_KIND_PROTO_PIRANHA)
-				unlockWeapons(1u << 6, "Black goop picked up");
 			if (ownGoop() && gp.onHit(e) == SMS_CANCEL)
 				return SMS_CANCEL;
 			return ownShots() ? eng.onHit(e) : SMS_CONTINUE;
