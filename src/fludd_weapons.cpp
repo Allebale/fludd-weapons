@@ -974,7 +974,7 @@ struct FluddWeapons : sms::Mod {
 			if (!setting("weapons_from_nozzles", 1) || !playing)
 				return;
 			const int coins = api().game->coins ? api().game->coins() : 0;
-			if (coins >= 60) // 60 coins: every weapon
+			if (coins >= 75) // 75 coins: every weapon
 				unlockWeapons(0x7Eu, "Every weapon picked up");
 			else if (coins >= 20) // 20 coins: the Black goop
 				unlockWeapons(1u << 6, "Black goop picked up");
