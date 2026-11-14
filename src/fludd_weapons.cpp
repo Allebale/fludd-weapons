@@ -67,9 +67,11 @@ const int kRocketModeCount       = 3;
 const char* const kRocketKeys[]  = {"Left Ctrl", "Left Shift"}; // SDL key names: the keys themselves, whatever they do in the game
 // the controller's rocket jump button (each player's own): L as before, or another. The
 // game's own use of it stays (the mod only reads it)
-const char* const kRocketPads[] = {"L trigger", "D-pad up", "B button"};
-const uint16_t kRocketPadBits[] = {SMS_PAD_L, SMS_PAD_UP, SMS_PAD_B};
-const int kRocketPadCount       = 3;
+const char* const kRocketPads[] = {"L trigger", "R trigger", "Z button", "A button", "B button", "X button",
+                                   "Y button", "D-pad up", "D-pad down", "D-pad left", "D-pad right", "Start"};
+const uint16_t kRocketPadBits[] = {SMS_PAD_L,  SMS_PAD_R,    SMS_PAD_Z,    SMS_PAD_A,     SMS_PAD_B,    SMS_PAD_X,
+                                   SMS_PAD_Y,  SMS_PAD_UP,   SMS_PAD_DOWN, SMS_PAD_LEFT, SMS_PAD_RIGHT, SMS_PAD_START};
+const int kRocketPadCount       = 12;
 const int kRocketKeyCount        = 2;
 const char* const kProjectiles[] = {"Water", "Green water balloon", "Big green water balloon"}; // the bazooka's shot seen flying
 const int kProjectileCount       = 3;
@@ -511,8 +513,10 @@ struct FluddWeapons : sms::Mod {
 	{
 		const int b = setting("rocket_jump_pad", 0);
 		const int i = b >= 0 && b < kRocketPadCount ? b : 0;
-		if (i == 0)
+		if (i == 0) // the triggers pressed half way count too
 			return (p.held & SMS_PAD_L) || p.trigger_l >= 0.5f;
+		if (i == 1)
+			return (p.held & SMS_PAD_R) || p.trigger_r >= 0.5f;
 		return (p.held & kRocketPadBits[i]) != 0;
 	}
 
