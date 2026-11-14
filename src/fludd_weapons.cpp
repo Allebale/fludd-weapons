@@ -88,6 +88,8 @@ struct FluddWeapons : sms::Mod {
 	float muzzleOf[2][3] = {};  // each player's pack's gun's muzzle, as last placed (third person)
 	SmsVec3 muzzleMario[2] = {}; // where Mario was then
 	double muzzleAt[2]     = {-10.0, -10.0};
+	float downT[2]         = {};          // each player's pack's gun turned down (third person rocket jump), 0 to 1
+	double downTime[2]     = {-1.0, -1.0}; // when it was last turned
 	double underAt  = -10.0; // the last SMS_EV_DRAW_UNDER_HUD (the game draws mods under its HUD)
 	float viewFar = 1.0f; // the long range given the game (game->set_view_distance)
 	bool playing = true; // the stage's opening is over (SMS_EV_STAGE_START): the player has the controls
@@ -351,6 +353,30 @@ struct FluddWeapons : sms::Mod {
 	// out), and in third person (the setting) FLUDD drawn as the weapon's pack with the weapon on it,
 	// kicking back as it fires. Hidden while Mario climbs (his hands busy; FLUDD as itself on his
 	// back) and held in view once he is dead.
+	// How far back the pack's gun goes, turned down, to hang behind the pack: its turned barrel just
+	// behind the pack's back (in the level frame: y ahead), from the pack's corners as it sits now
+	float downShift(int which, const float B[3][4], const float L[3][4], const float off[3]) const
+	{
+		const wmodels::Source& pk = wmodels::kPack[which];
+		float packBack = 1e30f; // the pack's furthest back, the level frame's y, from the pivot's place
+		for (int i = 0; i < pk.corners; i++) {
+			const float* p = pk.pos + 3 * i;
+			float w[3];
+			for (int r = 0; r < 3; r++)
+				w[r] = B[r][0] * p[0] + B[r][1] * p[1] + B[r][2] * p[2];
+			const float y = L[0][1] * w[0] + L[1][1] * w[1] + L[2][1] * w[2];
+			packBack      = y < packBack ? y : packBack;
+		}
+		const wmodels::Source& g = wmodels::kPackGun[which];
+		float top = -1e30f; // the gun's highest (turned down, its top is furthest back)
+		for (int i = 0; i < g.corners; i++)
+			top = g.pos[3 * i + 2] > top ? g.pos[3 * i + 2] : top;
+		// turned down about the pivot, a corner's y is py + (z - pz): the gun's back is py + top - pz
+		const float gunBack = off[1] + (top - wmodels::kPivotZ) + wmodels::kPivotY - wmodels::kPivotY;
+		const float shift   = gunBack - (packBack - 1.5f);
+		return shift > 0.0f ? shift : 0.0f;
+	}
+
 	void drawModels(int pl, int w, const SmsHeldFluddState& s)
 	{
 		const SmsApi& a = api();
@@ -403,7 +429,20 @@ struct FluddWeapons : sms::Mod {
 				const float t    = (float)(eng.time - ep.shotAt);
 				const float ph   = t >= 0.0f && t < len ? t / len : -1.0f;
 				const float kick = ph >= 0.0f ? (1.0f - ph) * (1.0f - ph) : 0.0f;
-				const float back = kick * wmodels::kKickBack[which], tilt = kick * wmodels::kKickTilt[which];
+				// third person rocket jump: turned down behind him, bending back from where it sits (its
+				// barrel swung over behind the pack, the muzzle down at his heels), and back again
+				const bool wantDown = which == 1 && !(s.first_person && s.held) && thirdRocketDown();
+				const double now    = eng.time;
+				const float dt      = downTime[pl & 1] >= 0.0 && now > downTime[pl & 1] ? (float)(now - downTime[pl & 1]) : 0.0f;
+				downTime[pl & 1]    = now;
+				float& dn           = downT[pl & 1];
+				dn += (wantDown ? 1.0f : -1.0f) * dt * 7.0f; // about 0.15 s either way
+				dn = dn < 0.0f ? 0.0f : dn > 1.0f ? 1.0f : dn;
+				const float ease  = dn * dn * (3.0f - 2.0f * dn);
+				const float early = dn < 0.5f ? dn * 2.0f : 1.0f; // back first, so it turns behind the pack
+				const float slide = dn > 0.0f ? early * early * (3.0f - 2.0f * early) * downShift(which, B, L, off) : 0.0f;
+				const float back  = kick * wmodels::kKickBack[which] + slide,
+				            tilt  = kick * wmodels::kKickTilt[which] - ease * 1.5707963f;
 				const float c = cosf(tilt), sn = sinf(tilt);
 				const float place[3][4] = {{1, 0, 0, off[0]},
 				                           {0, c, -sn, off[1] + py - (c * py - sn * pz) - back - py},
@@ -475,6 +514,13 @@ struct FluddWeapons : sms::Mod {
 		return sc > 0 && input().key_down(sc);
 	}
 
+	// third person: rocket jumps on there and the rocket jump key (or a controller's L) held, the
+	// bazooka on his back turned down behind him
+	bool thirdRocketDown() const
+	{
+		return setting("rocket_jump_third", 0) && setting("rocket_jump", 2) != 0 && rocketKeyHeld();
+	}
+
 	bool rocketJumpOn() const
 	{
 		const int mode = setting("rocket_jump", 2);
@@ -518,12 +564,14 @@ struct FluddWeapons : sms::Mod {
 			s.hitSize  = (float)setting("smg_hit", 100) / 100.0f;
 			s.dropSize = (float)setting("smg_blob", 20) / 100.0f;
 		} else if (w == W_BAZOOKA) {
-			const bool jump = rocketJumpOn();
+			const bool down = !inView && thirdRocketDown();
+			const bool jump = inView ? rocketJumpOn() : down;
 			s.every    = (float)setting("bazooka_rate", 8) / 10.0f;
 			s.range    = (float)setting("bazooka_range", 100) / 100.0f;
 			s.toDefeat = setting("bazooka_defeat", 3);
 			s.water    = setting("bazooka_water", 60);
-			s.burst    = (float)setting(inView && jump ? "bazooka_burst_jump" : inView ? "bazooka_burst" : "bazooka_burst_third", inView ? 130 : 400) / 100.0f;
+			s.burst    = (float)setting(jump ? "bazooka_burst_jump" : inView ? "bazooka_burst" : "bazooka_burst_third", inView || jump ? 130 : 400) / 100.0f;
+			s.aimDown  = down;
 			s.push     = (float)setting(inView ? "bazooka_push" : "bazooka_push_third", inView ? 200 : 800) / 100.0f;
 			s.lift     = (float)setting("bazooka_lift", 40) / 100.0f;
 			s.selfJump    = jump ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
@@ -714,6 +762,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up", true);
 		preset.optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
+		preset.optionBool("rocket_jump_third", "Bazooka rocket jumps in third person (hold the rocket jump key)", false);
 		preset.optionChoice("rocket_jump_key", "Rocket jump key",
 		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 1);
 		preset.optionBool("rocket_jump_hurt", "Rocket jumps cost Mario 1 health", true);
