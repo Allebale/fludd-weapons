@@ -358,28 +358,67 @@ struct FluddWeapons : sms::Mod {
 	// out), and in third person (the setting) FLUDD drawn as the weapon's pack with the weapon on it,
 	// kicking back as it fires. Hidden while Mario climbs (his hands busy; FLUDD as itself on his
 	// back) and held in view once he is dead.
-	// How far back the pack's gun goes, turned down, to hang behind the pack: its turned barrel just
-	// behind the pack's back (in the level frame: y ahead), from the pack's corners as it sits now
+	// How far back the pack's gun goes, turned down, to sit right against the pack's back with no gap:
+	// the level frame (y ahead, z up) cut into thin slices up and down; in each the gun's front
+	// (turned down, its top side faces Mario) is kept behind the pack's back where they are side by
+	// side, from the pack's triangles as it sits now. The least that keeps them apart in every slice.
 	float downShift(int which, const float B[3][4], const float L[3][4], const float off[3]) const
 	{
-		const wmodels::Source& pk = wmodels::kPack[which];
-		float packBack = 1e30f; // the pack's furthest back, the level frame's y, from the pivot's place
-		for (int i = 0; i < pk.corners; i++) {
-			const float* p = pk.pos + 3 * i;
-			float w[3];
-			for (int r = 0; r < 3; r++)
-				w[r] = B[r][0] * p[0] + B[r][1] * p[1] + B[r][2] * p[2];
-			const float y = L[0][1] * w[0] + L[1][1] * w[1] + L[2][1] * w[2];
-			packBack      = y < packBack ? y : packBack;
-		}
+		const float py = wmodels::kPivotY, pz = wmodels::kPivotZ;
 		const wmodels::Source& g = wmodels::kPackGun[which];
-		float top = -1e30f; // the gun's highest (turned down, its top is furthest back)
-		for (int i = 0; i < g.corners; i++)
-			top = g.pos[3 * i + 2] > top ? g.pos[3 * i + 2] : top;
-		// turned down about the pivot, a corner's y is py + (z - pz): the gun's back is py + top - pz
-		const float gunBack = off[1] + (top - wmodels::kPivotZ) + wmodels::kPivotY - wmodels::kPivotY;
-		const float shift   = gunBack - (packBack - 1.5f);
-		return shift > 0.0f ? shift : 0.0f;
+		// the gun turned down (about the pivot, no slide): y = off1 + (z - pz), z = off2 - (y - py)
+		float zLo = 1e30f, zHi = -1e30f, half = 0.0f;
+		for (int i = 0; i < g.corners; i++) {
+			const float* c = g.pos + 3 * i;
+			const float z  = off[2] - (c[1] - py);
+			zLo  = z < zLo ? z : zLo;
+			zHi  = z > zHi ? z : zHi;
+			half = fabsf(c[0]) > half ? fabsf(c[0]) : half;
+		}
+		const int kSlices  = 96;
+		const float step   = (zHi - zLo) / (float)kSlices + 1e-3f;
+		float gunFront[kSlices], packBack[kSlices];
+		for (int k = 0; k < kSlices; k++)
+			gunFront[k] = -1e30f, packBack[k] = 1e30f;
+		for (int i = 0; i < g.corners; i++) {
+			const float* c = g.pos + 3 * i;
+			const int k    = (int)((off[2] - (c[1] - py) - zLo) / step);
+			const float y  = off[1] + (c[2] - pz);
+			if (k >= 0 && k < kSlices && y > gunFront[k])
+				gunFront[k] = y;
+		}
+		// the pack in the level frame (its corners, and points along its triangles' edges)
+		const wmodels::Source& pk = wmodels::kPack[which];
+		float lv[3][3];
+		for (int t = 0; t + 2 < pk.corners; t += 3) {
+			for (int v = 0; v < 3; v++) {
+				const float* p = pk.pos + 3 * (t + v);
+				float w[3];
+				for (int r = 0; r < 3; r++)
+					w[r] = B[r][0] * p[0] + B[r][1] * p[1] + B[r][2] * p[2];
+				for (int c = 0; c < 3; c++)
+					lv[v][c] = L[0][c] * w[0] + L[1][c] * w[1] + L[2][c] * w[2];
+			}
+			for (int e = 0; e < 3; e++) {
+				const float* a = lv[e];
+				const float* b = lv[(e + 1) % 3];
+				for (int n = 0; n <= 4; n++) {
+					const float f = (float)n / 4.0f;
+					const float x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f, z = a[2] + (b[2] - a[2]) * f;
+					if (fabsf(x - off[0]) > half + 1.0f) // not beside the gun
+						continue;
+					const int k = (int)((z - zLo) / step);
+					if (k >= 0 && k < kSlices && y < packBack[k])
+						packBack[k] = y;
+				}
+			}
+		}
+		// (negative: a gap to close, forward)
+		float shift = -1e30f;
+		for (int k = 0; k < kSlices; k++)
+			if (gunFront[k] > -1e29f && packBack[k] < 1e29f && gunFront[k] - packBack[k] + 0.3f > shift)
+				shift = gunFront[k] - packBack[k] + 0.3f;
+		return shift > -1e29f ? shift : 0.0f;
 	}
 
 	void drawModels(int pl, int w, const SmsHeldFluddState& s)
