@@ -573,6 +573,8 @@ struct FluddWeapons : sms::Mod {
 		gp.set.npcs       = setting("goop_characters", 1) != 0;
 		gp.set.defeat     = setting("weapons_defeat", 1) != 0;
 		gp.set.quality    = setting("goop_quality", 2);
+		gp.set.grassPress = setting("goop_grass_press", 1) != 0;
+		gp.set.grassBurn  = setting("goop_grass_burn", 1) != 0;
 	}
 
 	// long range: how many times further than the game's own enemies are seen and move
@@ -887,6 +889,8 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("goop_characters", "Goop shocks and burns friendly characters (never defeats them)", true);
 		preset.optionBool("goop_walls", "Goop sticks to walls and drips down", true);
 		preset.optionNumber("goop_wall_life", "Goop on walls lasts (seconds)", 15, 5, 300, 5);
+		preset.optionBool("goop_grass_press", "Electric and black goop press the grass down (Remastered builds)", true);
+		preset.optionBool("goop_grass_burn", "Fire goop burns the grass and sets it alight (Remastered builds)", true);
 		static const char* const kQualities[] = {"Very low", "Low", "Medium", "High", "Very high"};
 		preset.optionChoice("goop_quality", "Goop quality (lower for slower PCs)", std::vector<const char*>(kQualities, kQualities + 5), 2);
 		preset.check();

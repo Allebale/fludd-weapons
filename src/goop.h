@@ -55,6 +55,8 @@ struct Settings {
 	bool npcs        = true;    // friendly characters shocked and burnt (never defeated)
 	bool defeat      = true;    // enemies defeated by it
 	int quality      = 2;       // its look: 0 very low (simplest puddles, fewest flames) to 4 very high
+	bool grassPress  = true;    // Remastered builds: electric and black goop press the 3D Grass flat
+	bool grassBurn   = true;    // Remastered builds: fire goop burns it away, the fire running on through it
 	const Stats& of(int kind) const { return kinds[kind == kElectric ? 1 : kind == kBlack ? 2 : 0]; }
 };
 
@@ -72,6 +74,27 @@ struct V3 {
 };
 
 #define GOOP_HAS(t, T, f) ((t) && (t)->size >= offsetof(T, f) + sizeof(void*) && (t)->f)
+
+// Super Mario Sunshine Remastered's 3D Grass, for a mod's effects on it (its SDK's api->grass). This
+// mod is built with the game's own SDK, which has no such table: Remastered keeps it two pointers
+// after `models` (after its `reflections`), with a magic to tell it by. On any other game it is not
+// there, and the goop leaves the grass alone.
+struct GrassApi {
+	uint32_t size, magic;
+	void (*press)(float x, float y, float z, float r);
+	void (*burn)(float x, float y, float z, float r, int ms);
+	int (*burning)(float x, float z);
+	int (*fires)(float* out, int most);
+	void (*extinguish)(float x, float z, float r);
+};
+inline const GrassApi* grassOf(const SmsApi* api)
+{
+	const size_t at = offsetof(SmsApi, models) + 2 * sizeof(void*);
+	if (!api || api->size < at + sizeof(void*))
+		return 0;
+	const GrassApi* g = *(const GrassApi* const*)((const char*)api + at);
+	return g && g->size >= sizeof(GrassApi) && g->magic == 0x53524747u ? g : 0;
+}
 
 struct Goop {
 	const SmsApi* api = 0;
@@ -166,6 +189,19 @@ struct Goop {
 	// ---------------------------------------------------------------- the players
 
 	const SmsHeldFluddApi* hf() const { return api->held_fludd; }
+	// Remastered's grass (0 on other games)
+	const GrassApi* grass() const { return grassOf(api); }
+	// grass on fire somewhere (fire goop's fire running through it)
+	bool grassFire() const
+	{
+		const GrassApi* g = set.grassBurn ? grass() : 0;
+		return g && g->fires(0, 0) > 0;
+	}
+	bool grassBurning(float x, float z) const
+	{
+		const GrassApi* g = set.grassBurn ? grass() : 0;
+		return g && g->burning(x, z);
+	}
 	int playerCount() const
 	{
 		const SmsHeldFluddApi* h = hf();
@@ -735,6 +771,10 @@ struct Goop {
 			if (!isSmall(e) && !(set.npcs && isNpc(e)))
 				continue;
 			const V3 at = posOf(e);
+			if (grassBurning(at.x, at.z)) { // in the grass on fire
+				burn(e, kFire, true);
+				continue;
+			}
 			for (int k = 0; k < kPuddles; k++) {
 				const Puddle& p = puddles[k];
 				if (!p.on || p.kind == kBlack)
@@ -893,6 +933,10 @@ struct Goop {
 		}
 		if (m.position.y > m.floor.y + 12.0f) // in the air
 			return;
+		if (!blinking && grassBurning(m.position.x, m.position.z)) { // the grass on fire under him
+			fireHurt(m);
+			return;
+		}
 		for (int i = 0; i < kPuddles; i++) {
 			Puddle& p = puddles[i];
 			if (!p.on)
@@ -987,6 +1031,8 @@ struct Goop {
 				addGoop(kind, e.position.x, e.position.y, e.position.z, e.normal);
 			return SMS_CANCEL;
 		}
+		if (wash && !e.wall && grassFire()) // water puts the grass fire out where it lands
+			grass()->extinguish(e.position.x, e.position.z, wash == 2 ? 70.0f : 30.0f + e.drop_size * 0.6f);
 		if (!wash || !anyGoop())
 			return SMS_CONTINUE;
 		const float reach = wash == 2 ? 40.0f : e.drop_size * 0.7f, amount = wash == 2 ? 28.0f : kWash;
@@ -1099,7 +1145,21 @@ struct Goop {
 				g.on = false;
 			any = any || g.on;
 		}
-		if (!any && !kinds[0] && !kinds[1])
+		// the grass under each puddle (Remastered builds): pressed flat, or burnt away
+		const GrassApi* gr = set.grassPress || set.grassBurn ? grass() : 0;
+		if (gr && any)
+			for (int i = 0; i < kPuddles; i++) {
+				const Puddle& p = puddles[i];
+				if (!p.on)
+					continue;
+				if (p.kind == kFire) {
+					if (set.grassBurn)
+						gr->burn(p.x, p.y, p.z, sizeNow(p) * 0.95f, (int)(secs * 1000.0f));
+				} else if (set.grassPress)
+					gr->press(p.x, p.y, p.z, sizeNow(p) * 0.95f);
+			}
+		const bool fire = grassFire();
+		if (!any && !fire && !kinds[0] && !kinds[1])
 			return;
 		// the enemies and characters in the stage (and the Phantamantas: a second's), for their checks
 		const SmsVec3 c = V3().s();
@@ -1119,7 +1179,7 @@ struct Goop {
 			if (!gone(mantas[i]))
 				everyone[everyoneCount++] = mantas[i];
 		watchMovers();
-		if (!any)
+		if (!any && !fire)
 			return;
 		for (int p = 0; p < playerCount(); p++) {
 			For f(hf(), p);
@@ -1750,7 +1810,8 @@ struct Goop {
 	void draw(const SmsEvDrawScene& e)
 	{
 		const bool anyStream = players[0].kind || players[1].kind;
-		if (!anyGoop() && !anyStream && drops.empty())
+		const bool fire      = grassFire();
+		if (!anyGoop() && !anyStream && drops.empty() && !fire)
 			return;
 		if (!hasPictures())
 			return;
@@ -1785,6 +1846,16 @@ struct Goop {
 				const float tall = 30.0f + r * 0.3f;
 				flame(g.x + g.nx * 8.0f - g.nz * (k ? 0.3f : -0.3f) * r, g.y - r * 0.2f, g.z + g.nz * 8.0f + g.nx * (k ? 0.3f : -0.3f) * r, tall,
 				      tall * (0.6f + 0.4f * sinf(tm * 8.0f + g.seed + (float)k * 2.0f)), 0.1f * tall * sinf(tm * 5.0f + (float)k));
+			}
+		}
+		if (fire) { // grass on fire: a flame at each burning place
+			static float at[300 * 3];
+			const int n = grass()->fires(at, 300);
+			for (int i = 0; i < n && i < 300; i++) {
+				const uint32_t key = (uint32_t)((int)(at[i * 3] / 12.0f) * 73856093) ^ (uint32_t)((int)(at[i * 3 + 2] / 12.0f) * 19349663);
+				const float tall   = 30.0f + 25.0f * hash01(key);
+				const float h      = tall * (0.6f + 0.4f * sinf(tm * 9.0f + hash01(key + 1u) * 6.28f));
+				flame(at[i * 3], at[i * 3 + 1], at[i * 3 + 2], tall, h, 0.12f * tall * sinf(tm * 6.0f + (float)i));
 			}
 		}
 		flush(0, SMS_BLEND_ADD);
