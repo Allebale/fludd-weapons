@@ -130,6 +130,9 @@ struct FluddWeapons : sms::Mod {
 	double toastUntil = 0;
 	const char* toastText = "";
 	int toastPlayer = 0;
+	bool toastAll   = false; // for both players (a nozzle's weapons picked up), no player's name
+	// "Weapons come from nozzles": the weapons picked up in this stage (bits by kWeaponNames' index)
+	uint32_t unlocked = 0;
 
 	// co-op: the players, and the game's api acting on one (-1: the one the game runs as)
 	int players() const
@@ -184,6 +187,8 @@ struct FluddWeapons : sms::Mod {
 			return true;
 		char key[32];
 		snprintf(key, sizeof key, "weapon_on_%d", w);
+		if (setting("weapons_from_nozzles", 0) && !(unlocked & (1u << w))) // not picked up in this stage yet
+			return false;
 		return setting(key, 1) != 0;
 	}
 
@@ -235,6 +240,28 @@ struct FluddWeapons : sms::Mod {
 		toastText   = text;
 		toastUntil  = core().time() + 1.5;
 		toastPlayer = cur;
+		toastAll    = false;
+	}
+
+	// a nozzle picked up with "Weapons come from nozzles" on: its weapons for the rest of the stage
+	// (the rocket the Bazooka and the Rifle, the turbo the goop weapons, the hover the Submachine gun)
+	void nozzlePicked(int nozzle)
+	{
+		uint32_t bits = 0;
+		const char* text = nullptr;
+		if (nozzle == 1)
+			bits = (1u << 3) | (1u << 1), text = "Bazooka and Rifle picked up";
+		else if (nozzle == 5)
+			bits = (1u << 4) | (1u << 5) | (1u << 6), text = "Goop weapons picked up";
+		else if (nozzle == 4)
+			bits = 1u << 2, text = "Submachine gun picked up";
+		if (!bits || (unlocked & bits) == bits)
+			return;
+		unlocked |= bits;
+		toastText  = text;
+		toastUntil = core().time() + 3.0;
+		toastAll   = true;
+		info("%s", text);
 	}
 
 	// D-pad left and right: the weapon (each player's own controller; the number keys player 1's)
@@ -752,6 +779,7 @@ struct FluddWeapons : sms::Mod {
 	{
 		preset.addRow();
 		preset.optionBool("weapons", "FLUDD weapons, D-pad left and right", true);
+		preset.optionBool("weapons_from_nozzles", "Weapons come from nozzles (each level starts without them)", false);
 		preset.optionBool("weapon_on_1", "Rifle on", true);
 		preset.optionBool("weapon_on_2", "Submachine gun on", true);
 		preset.optionBool("weapon_on_3", "Bazooka on", true);
@@ -907,10 +935,19 @@ struct FluddWeapons : sms::Mod {
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent& ev) {
 			const SmsEvStage* st = ev.data && ev.size >= offsetof(SmsEvStage, reason) + sizeof(int) ? (const SmsEvStage*)ev.data : nullptr;
 			playing = st && st->reason == SMS_LEAVE_STATE_LOAD; // (a save state's load: straight into play)
+			if (!playing)
+				unlocked = 0; // a new stage: the nozzles' weapons to pick up again (a save state's load keeps them)
 			eng.stageReset();
 			gp.stageReset();
 		});
 		on(SMS_EV_STAGE_START, [this](SmsEvent&) { playing = true; });
+		// a nozzle picked up (out of its box or lying in the stage), not getting off Yoshi (his juice
+		// to the hover) nor a nozzle the stage or a cutscene gives
+		on<SmsEvPlayerNozzle>(SMS_EV_PLAYER_NOZZLE, [this](SmsEvPlayerNozzle& e) -> int {
+			if (setting("weapons_from_nozzles", 0) && e.reason == SMS_NOZZLE_SWITCH && e.from != 3 && e.from != -1 && playing)
+				nozzlePicked(e.to);
+			return SMS_CONTINUE;
+		});
 		// the bazooka with the rocket jump keys held: Mario's own voice (MSD_SE_MA_VO_* to MSD_SE_MV_*)
 		// left out, so his rocket jump's cries play alone
 		on<SmsEvSound>(SMS_EV_SOUND, [this](SmsEvSound& e) -> int {
@@ -1029,7 +1066,7 @@ struct FluddWeapons : sms::Mod {
 			if (core().time() > toastUntil)
 				return;
 			char text[64];
-			snprintf(text, sizeof text, "%s%s", players() < 2 ? "" : toastPlayer ? "Player 2 " : "Player 1 ", toastText);
+			snprintf(text, sizeof text, "%s%s", players() < 2 || toastAll ? "" : toastPlayer ? "Player 2 " : "Player 1 ", toastText);
 			const float w = draw().text_width(14, text) + 20;
 			SmsRect r;
 			if (!draw().hud_slot(handle(), SMS_ANCHOR_TOP, w, 26, &r))
