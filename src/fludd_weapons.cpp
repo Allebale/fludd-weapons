@@ -248,13 +248,13 @@ struct FluddWeapons : sms::Mod {
 	}
 
 	// a nozzle picked up with "Weapons come from nozzles" on: its weapons for the rest of the stage
-	// (the rocket the Bazooka and the Rifle, the turbo the goop weapons, the hover the Submachine gun)
+	// (the rocket the Bazooka, the turbo the goop weapons, the hover the Submachine gun)
 	void nozzlePicked(int nozzle)
 	{
 		uint32_t bits = 0;
 		const char* text = nullptr;
 		if (nozzle == 1)
-			bits = (1u << 3) | (1u << 1), text = "Bazooka and Rifle picked up";
+			bits = 1u << 3, text = "Bazooka picked up";
 		else if (nozzle == 5)
 			bits = (1u << 4) | (1u << 5) | (1u << 6), text = "Goop weapons picked up";
 		else if (nozzle == 4)
