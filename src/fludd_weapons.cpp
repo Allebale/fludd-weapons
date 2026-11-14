@@ -138,7 +138,6 @@ struct FluddWeapons : sms::Mod {
 	float startY    = 0.0f;  // where player 1 started the stage, up and down (climbing high gives the Rifle)
 	bool haveStart  = false;
 	uint32_t luck   = 2463534242u; // a 1-Up's random weapon
-	double protoHitAt = -100.0;    // Proto Piranha last hit (the Shine it leaves, soon after, beats it)
 
 	// co-op: the players, and the game's api acting on one (-1: the one the game runs as)
 	int players() const
@@ -1017,11 +1016,6 @@ struct FluddWeapons : sms::Mod {
 			if (api().player->get(&m) && m.valid && m.in_water)
 				unlockWeapons(1u << 5, "Electric goop picked up");
 		});
-		// Proto Piranha beaten (the Shine it leaves, soon after the last hit on it) gives the Black goop
-		on(SMS_EV_SHINE_APPEAR, [this](SmsEvent&) {
-			if (setting("weapons_from_nozzles", 1) && playing && core().time() - protoHitAt < 20.0)
-				unlockWeapons(1u << 6, "Black goop picked up");
-		});
 		// the stage's first blue coin gives the Black goop
 		on<SmsEvItem>(SMS_EV_ITEM_COLLECTED, [this](SmsEvItem& e) {
 			if (!setting("weapons_from_nozzles", 1) || !playing)
@@ -1123,8 +1117,10 @@ struct FluddWeapons : sms::Mod {
 				gp.draw(e);
 		});
 		on<SmsEvHit>(SMS_EV_OBJECT_HIT, [this](SmsEvHit& e) -> int {
-			if (e.object && SMS_API_HAS(api().actor, kind) && api().actor->kind(e.object) == SMS_KIND_PROTO_PIRANHA)
-				protoHitAt = core().time();
+			// a hit on Proto Piranha gives the Black goop
+			if (e.object && setting("weapons_from_nozzles", 1) && playing && SMS_API_HAS(api().actor, kind)
+			    && api().actor->kind(e.object) == SMS_KIND_PROTO_PIRANHA)
+				unlockWeapons(1u << 6, "Black goop picked up");
 			if (ownGoop() && gp.onHit(e) == SMS_CANCEL)
 				return SMS_CANCEL;
 			return ownShots() ? eng.onHit(e) : SMS_CONTINUE;
