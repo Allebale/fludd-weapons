@@ -116,9 +116,6 @@ struct FluddWeapons : sms::Mod {
 	struct Player {
 		int weapon    = 0;     // the weapon chosen (kWeaponNames)
 		bool numberWasDown[kWeaponCount] = {};
-		float slideFor = 0.0f;    // seconds belly sliding (2: a 1 in 4 chance of the Black goop)
-		float slideGap = 0.0f;    // seconds since the slide last showed
-		bool slideRolled = false; // this slide's chance taken
 		bool rHeld    = false; // R, as the controller has it (kept from the game while a weapon fires)
 		bool zoomed   = false; // the Rifle's zoom
 		bool zoomFromThird = false; // zoomed from third person (into first person for it)
@@ -976,8 +973,11 @@ struct FluddWeapons : sms::Mod {
 		on<SmsEvTick>(SMS_EV_TICK, [this](SmsEvTick& t) {
 			if (!setting("weapons_from_nozzles", 1) || !playing)
 				return;
-			if (api().game->coins && api().game->coins() >= 60) // 60 coins: every weapon
+			const int coins = api().game->coins ? api().game->coins() : 0;
+			if (coins >= 60) // 60 coins: every weapon
 				unlockWeapons(0x7Eu, "Every weapon picked up");
+			else if (coins >= 20) // 20 coins: the Black goop
+				unlockWeapons(1u << 6, "Black goop picked up");
 			for (int pl = 0; pl < players(); pl++) {
 				For f(*this, pl);
 				SmsPlayer m = SmsPlayer();
@@ -992,22 +992,6 @@ struct FluddWeapons : sms::Mod {
 					unlockWeapons(1u << 1, "Rifle picked up");
 				if (m.on_yoshi) // Yoshi's juice, quick as it comes: the Submachine gun
 					unlockWeapons(1u << 2, "Submachine gun picked up");
-				// belly sliding 2 seconds (after a dive, down a slope, on a slippery floor, on water), a
-				// gap of a few frames allowed: a 1 in 4 chance of the Black goop, once a slide
-				const bool sliding = st == 0x800456u || st == 0x50u || st == 0x44Cu || st == 0x840452u
-				                     || st == 0x84045Du || st == 0x810446u;
-				Player& me = P();
-				if (sliding)
-					me.slideFor += t.dt, me.slideGap = 0.0f;
-				else if ((me.slideGap += t.dt) > 0.25f)
-					me.slideFor = 0.0f, me.slideRolled = false;
-				if (me.slideFor >= 2.0f && !me.slideRolled) {
-					me.slideRolled = true;
-					luck ^= luck << 13, luck ^= luck >> 17, luck ^= luck << 5;
-					luck += (uint32_t)(core().time() * 1000.0);
-					if (luck % 4u == 0)
-						unlockWeapons(1u << 6, "Black goop picked up");
-				}
 				if (st == 0x208B4u || st == 0x20449u || st == 0x208B7u) // MARIO_STATUS_FIRE_JUMP, _FIRE_DASH, _FIRE_DOWN
 					unlockWeapons(1u << 4, "Fire goop picked up");
 				else if (st == 0x20338u || st == 0x21313u) // MARIO_STATUS_ELECTRIC_DAMAGE, _ELEC_DOWN
