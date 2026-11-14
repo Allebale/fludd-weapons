@@ -587,8 +587,8 @@ struct FluddWeapons : sms::Mod {
 			s.aimDown  = down;
 			s.push     = (float)setting(inView ? "bazooka_push" : "bazooka_push_third", inView ? 200 : 800) / 100.0f;
 			s.lift     = (float)setting("bazooka_lift", 40) / 100.0f;
-			s.selfJump    = jump ? (float)setting(down ? "rocket_jump_power_third" : "rocket_jump_power", down ? 170 : 130) / 100.0f : 0.0f;
-			s.feetForward = (float)setting(down ? "rocket_jump_feet_third" : "rocket_jump_feet", 50) / 100.0f;
+			s.selfJump    = jump ? (float)setting(down ? "rocket_jump_power_third" : "rocket_jump_power", down ? 150 : 130) / 100.0f : 0.0f;
+			s.feetForward = (float)setting(down ? "rocket_jump_feet_third" : "rocket_jump_feet", down ? 30 : 50) / 100.0f;
 			s.hurt        = setting("rocket_jump_hurt", 1) != 0;
 			s.cry         = setting("rocket_jump_ouch", 1) != 0;
 			s.cryVolume   = (float)setting("rocket_jump_cry_volume", 40) / 100.0f;
@@ -786,12 +786,12 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 40, 1, 100, 1);
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
-		preset.optionNumber("rocket_jump_power_third", "Bazooka rocket jump height in third person (percent)", 170, 10, 300, 10);
+		preset.optionNumber("rocket_jump_power_third", "Bazooka rocket jump height in third person (percent)", 150, 10, 300, 10);
 		preset.optionBool("rocket_key_launch", "Bazooka rocket jump key shots launch enemies up", true);
 		preset.optionBool("rocket_air_pop", "Bazooka shots defeat enemies in the air at once", true);
 		preset.optionNumber("rocket_key_launch_height", "Bazooka rocket jump key launch height (percent)", 80, 10, 300, 10);
 		preset.optionNumber("rocket_jump_feet", "Rocket jump forward boost off your feet (percent)", 50, 0, 300, 10);
-		preset.optionNumber("rocket_jump_feet_third", "Rocket jump forward boost off your feet in third person (percent)", 50, 0, 300, 10);
+		preset.optionNumber("rocket_jump_feet_third", "Rocket jump forward boost off your feet in third person (percent)", 30, 0, 300, 10);
 		preset.optionNumber("fire_goop_defeat", "Fire goop burning time before an enemy is defeated (tenths of a second)", 5, 1, 100, 1);
 		preset.optionNumber("fire_goop_hits", "Fire goop burns before an enemy is defeated", 3, 1, 20, 1);
 		preset.optionNumber("fire_goop_water", "Fire goop water use (percent of FLUDD's)", 250, 10, 1000, 10);
