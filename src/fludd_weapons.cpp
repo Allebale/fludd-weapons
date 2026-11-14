@@ -116,7 +116,7 @@ struct FluddWeapons : sms::Mod {
 	struct Player {
 		int weapon    = 0;     // the weapon chosen (kWeaponNames)
 		bool numberWasDown[kWeaponCount] = {};
-		float slideFor = 0.0f; // seconds belly sliding without a stop (5 give the Black goop)
+		float slideFor = 0.0f; // seconds belly sliding without a stop (10 give the Black goop)
 		bool rHeld    = false; // R, as the controller has it (kept from the game while a weapon fires)
 		bool zoomed   = false; // the Rifle's zoom
 		bool zoomFromThird = false; // zoomed from third person (into first person for it)
@@ -990,11 +990,11 @@ struct FluddWeapons : sms::Mod {
 					unlockWeapons(1u << 1, "Rifle picked up");
 				if (m.on_yoshi) // Yoshi's juice, quick as it comes: the Submachine gun
 					unlockWeapons(1u << 2, "Submachine gun picked up");
-				// belly sliding 5 seconds without a stop (after a dive, down a slope, on a slippery floor):
+				// belly sliding 10 seconds without a stop (after a dive, down a slope, on a slippery floor):
 				// MARIO_STATUS_SPEED_SLIDING, _SLIP_FORE, _OIL_SLIP
 				float& slide = P().slideFor;
 				slide = st == 0x44Cu || st == 0x840452u || st == 0x84045Du ? slide + t.dt : 0.0f;
-				if (slide >= 5.0f)
+				if (slide >= 10.0f)
 					unlockWeapons(1u << 6, "Black goop picked up");
 				if (st == 0x208B4u || st == 0x20449u || st == 0x208B7u) // MARIO_STATUS_FIRE_JUMP, _FIRE_DASH, _FIRE_DOWN
 					unlockWeapons(1u << 4, "Fire goop picked up");
@@ -1015,6 +1015,11 @@ struct FluddWeapons : sms::Mod {
 			m.size      = sizeof m;
 			if (api().player->get(&m) && m.valid && m.in_water)
 				unlockWeapons(1u << 5, "Electric goop picked up");
+		});
+		// Yoshi eats a fruit: the Black goop
+		on(SMS_EV_YOSHI_EAT, [this](SmsEvent&) {
+			if (setting("weapons_from_nozzles", 1) && playing)
+				unlockWeapons(1u << 6, "Black goop picked up");
 		});
 		// a 1-Up gives a weapon not had yet
 		on<SmsEvItem>(SMS_EV_ITEM_COLLECTED, [this](SmsEvItem& e) {
