@@ -255,6 +255,12 @@ struct FluddWeapons : sms::Mod {
 			bits = (1u << 4) | (1u << 5) | (1u << 6), text = "Goop weapons picked up";
 		else if (nozzle == 4)
 			bits = 1u << 2, text = "Submachine gun picked up";
+		unlockWeapons(bits, text);
+	}
+
+	// weapons got for the rest of the stage ("Weapons come from nozzles"), with a notice
+	void unlockWeapons(uint32_t bits, const char* text)
+	{
 		if (!bits || (unlocked & bits) == bits)
 			return;
 		unlocked |= bits;
@@ -779,7 +785,7 @@ struct FluddWeapons : sms::Mod {
 	{
 		preset.addRow();
 		preset.optionBool("weapons", "FLUDD weapons, D-pad left and right", true);
-		preset.optionBool("weapons_from_nozzles", "Weapons come from nozzles (each level starts without them)", true);
+		preset.optionBool("weapons_from_nozzles", "Weapons picked up in each level (nozzles, fire, shocks, blue coins)", true);
 		preset.optionBool("weapon_on_1", "Rifle on", true);
 		preset.optionBool("weapon_on_2", "Submachine gun on", true);
 		preset.optionBool("weapon_on_3", "Bazooka on", true);
@@ -955,6 +961,29 @@ struct FluddWeapons : sms::Mod {
 				return SMS_CONTINUE;
 			For f(*this, 0);
 			return weaponNow() == W_BAZOOKA && muteKeysHeld() ? SMS_CANCEL : SMS_CONTINUE;
+		});
+		// with "Weapons come from nozzles": burned (fire, fire goop) gives the Fire goop, shocked
+		// (electric goop, an electric enemy) the Electric goop, for the rest of the stage
+		on(SMS_EV_TICK, [this](SmsEvent&) {
+			if (!setting("weapons_from_nozzles", 1) || !playing)
+				return;
+			for (int pl = 0; pl < players(); pl++) {
+				For f(*this, pl);
+				SmsPlayer m = SmsPlayer();
+				m.size      = sizeof m;
+				if (!api().player->get(&m) || !m.valid)
+					continue;
+				const uint32_t st = m.status;
+				if (st == 0x208B4u || st == 0x20449u || st == 0x208B7u) // MARIO_STATUS_FIRE_JUMP, _FIRE_DASH, _FIRE_DOWN
+					unlockWeapons(1u << 4, "Fire goop picked up");
+				else if (st == 0x20338u || st == 0x21313u) // MARIO_STATUS_ELECTRIC_DAMAGE, _ELEC_DOWN
+					unlockWeapons(1u << 5, "Electric goop picked up");
+			}
+		});
+		// the stage's first blue coin gives the Black goop
+		on<SmsEvItem>(SMS_EV_ITEM_COLLECTED, [this](SmsEvItem& e) {
+			if (setting("weapons_from_nozzles", 1) && playing && e.kind == SMS_ITEM_BLUE_COIN)
+				unlockWeapons(1u << 6, "Black goop picked up");
 		});
 		on<SmsEvTick>(SMS_EV_TICK, [this](SmsEvTick& t) {
 			if (!ownShots())
