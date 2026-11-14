@@ -70,6 +70,7 @@ const char* const kRocketKeys[]  = {"Left Ctrl", "Left Shift"}; // SDL key names
 const char* const kRocketPads[] = {"A button", "R trigger", "Z button"};
 const uint16_t kRocketPadBits[] = {SMS_PAD_A, SMS_PAD_R, SMS_PAD_Z};
 const int kRocketPadCount       = 3;
+const float kClimbHigh          = 2000.0f; // how far above where the stage started him Mario stands for the Rifle
 const int kRocketKeyCount        = 2;
 const char* const kProjectiles[] = {"Water", "Green water balloon", "Big green water balloon"}; // the bazooka's shot seen flying
 const int kProjectileCount       = 3;
@@ -133,6 +134,9 @@ struct FluddWeapons : sms::Mod {
 	bool toastAll   = false; // for both players (a nozzle's weapons picked up), no player's name
 	// "Weapons come from nozzles": the weapons picked up in this stage (bits by kWeaponNames' index)
 	uint32_t unlocked = 0;
+	float startY    = 0.0f;  // where player 1 started the stage, up and down (climbing high gives the Rifle)
+	bool haveStart  = false;
+	uint32_t luck   = 2463534242u; // a 1-Up's random weapon
 
 	// co-op: the players, and the game's api acting on one (-1: the one the game runs as)
 	int players() const
@@ -785,7 +789,7 @@ struct FluddWeapons : sms::Mod {
 	{
 		preset.addRow();
 		preset.optionBool("weapons", "FLUDD weapons, D-pad left and right", true);
-		preset.optionBool("weapons_from_nozzles", "Weapons picked up in each level (nozzles, fire, shocks, blue coins)", true);
+		preset.optionBool("weapons_from_nozzles", "Weapons picked up in each level (nozzles, coins, fire, shocks and more)", true);
 		preset.optionBool("weapon_on_1", "Rifle on", true);
 		preset.optionBool("weapon_on_2", "Submachine gun on", true);
 		preset.optionBool("weapon_on_3", "Bazooka on", true);
@@ -941,8 +945,10 @@ struct FluddWeapons : sms::Mod {
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent& ev) {
 			const SmsEvStage* st = ev.data && ev.size >= offsetof(SmsEvStage, reason) + sizeof(int) ? (const SmsEvStage*)ev.data : nullptr;
 			playing = st && st->reason == SMS_LEAVE_STATE_LOAD; // (a save state's load: straight into play)
-			if (!playing)
-				unlocked = 0; // a new stage: the nozzles' weapons to pick up again (a save state's load keeps them)
+			if (!playing) {
+				unlocked  = 0; // a new stage: the nozzles' weapons to pick up again (a save state's load keeps them)
+				haveStart = false;
+			}
 			eng.stageReset();
 			gp.stageReset();
 		});
@@ -967,6 +973,8 @@ struct FluddWeapons : sms::Mod {
 		on(SMS_EV_TICK, [this](SmsEvent&) {
 			if (!setting("weapons_from_nozzles", 1) || !playing)
 				return;
+			if (api().game->coins && api().game->coins() >= 99) // 99 coins: every weapon
+				unlockWeapons(0x7Eu, "Every weapon picked up");
 			for (int pl = 0; pl < players(); pl++) {
 				For f(*this, pl);
 				SmsPlayer m = SmsPlayer();
@@ -974,6 +982,13 @@ struct FluddWeapons : sms::Mod {
 				if (!api().player->get(&m) || !m.valid)
 					continue;
 				const uint32_t st = m.status;
+				if (pl == 0 && !haveStart && m.on_ground) // where the stage starts him
+					startY = m.position.y, haveStart = true;
+				// up a tower, a windmill, a cliff: the Rifle
+				if (haveStart && m.on_ground && m.position.y - startY >= kClimbHigh)
+					unlockWeapons(1u << 1, "Rifle picked up");
+				if (m.on_yoshi) // Yoshi's juice, quick as it comes: the Submachine gun
+					unlockWeapons(1u << 2, "Submachine gun picked up");
 				if (st == 0x208B4u || st == 0x20449u || st == 0x208B7u) // MARIO_STATUS_FIRE_JUMP, _FIRE_DASH, _FIRE_DOWN
 					unlockWeapons(1u << 4, "Fire goop picked up");
 				else if (st == 0x20338u || st == 0x21313u) // MARIO_STATUS_ELECTRIC_DAMAGE, _ELEC_DOWN
@@ -996,8 +1011,24 @@ struct FluddWeapons : sms::Mod {
 		});
 		// the stage's first blue coin gives the Black goop
 		on<SmsEvItem>(SMS_EV_ITEM_COLLECTED, [this](SmsEvItem& e) {
-			if (setting("weapons_from_nozzles", 1) && playing && e.kind == SMS_ITEM_BLUE_COIN)
+			if (!setting("weapons_from_nozzles", 1) || !playing)
+				return;
+			if (e.kind == SMS_ITEM_BLUE_COIN)
 				unlockWeapons(1u << 6, "Black goop picked up");
+			else if (e.kind == SMS_ITEM_ONE_UP) { // a 1-Up: one weapon not had yet, by chance
+				int left[kWeaponCount], n = 0;
+				for (int w = 1; w < kWeaponCount; w++)
+					if (!(unlocked & (1u << w)))
+						left[n++] = w;
+				if (!n)
+					return;
+				luck ^= luck << 13, luck ^= luck >> 17, luck ^= luck << 5;
+				luck += (uint32_t)(core().time() * 1000.0);
+				const int w = left[luck % (uint32_t)n];
+				static char text[48];
+				snprintf(text, sizeof text, "%s picked up", kWeaponNames[w]);
+				unlockWeapons(1u << w, text);
+			}
 		});
 		on<SmsEvTick>(SMS_EV_TICK, [this](SmsEvTick& t) {
 			if (!ownShots())
