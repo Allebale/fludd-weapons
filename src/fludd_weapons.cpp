@@ -65,6 +65,11 @@ const int kShadowCount            = 6;
 const char* const kRocketModes[] = {"Off", "Always", "While the key is held"};
 const int kRocketModeCount       = 3;
 const char* const kRocketKeys[]  = {"Left Ctrl", "Left Shift"}; // SDL key names: the keys themselves, whatever they do in the game
+// the controller's rocket jump button (each player's own): L as before, or another, or none. The
+// game's own use of it stays (the mod only reads it)
+const char* const kRocketPads[] = {"L", "Z", "X", "Y", "D-pad down", "None"};
+const uint16_t kRocketPadBits[] = {SMS_PAD_L, SMS_PAD_Z, SMS_PAD_X, SMS_PAD_Y, SMS_PAD_DOWN, 0};
+const int kRocketPadCount       = 6;
 const int kRocketKeyCount        = 2;
 const char* const kProjectiles[] = {"Water", "Green water balloon", "Big green water balloon"}; // the bazooka's shot seen flying
 const int kProjectileCount       = 3;
@@ -317,11 +322,11 @@ struct FluddWeapons : sms::Mod {
 	}
 
 	// Rocket jumps now: the setting, and with "While the key is held" the key (Left Ctrl or Left Shift)
-	// Left Ctrl, Left Shift or a controller's L held: Mario's own voice muted (his rocket jump's cries alone)
+	// Left Ctrl, Left Shift or the controller's rocket jump button held: Mario's own voice muted (his rocket jump's cries alone)
 	bool muteKeysHeld() const
 	{
 		const SmsPad p = pad(cur);
-		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
+		if (padRocketHeld(p))
 			return true;
 		for (int k = 0; k < kRocketKeyCount && cur == 0; k++) { // (the keyboard: player 1's)
 			const int sc = input().key_from_name(kRocketKeys[k]);
@@ -333,14 +338,14 @@ struct FluddWeapons : sms::Mod {
 
 	// The bazooka's shots on walking enemies: in the air they defeat them at once (2, the
 	// "rocket_air_pop" setting), and while the rocket jump key is held those on the ground are thrown
-	// up (1, "rocket_key_launch"). The keyboard's key is player 1's; a controller's L anyone's.
+	// up (1, "rocket_key_launch"). The keyboard's key is player 1's; the controller's button anyone's.
 	int keyLaunchNow() const
 	{
 		const int pop = setting("rocket_air_pop", 1) ? 2 : 0;
 		if (!setting("rocket_key_launch", 1))
 			return pop;
 		const SmsPad p = pad(cur);
-		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
+		if (padRocketHeld(p))
 			return pop | 1;
 		if (cur != 0)
 			return pop;
@@ -501,11 +506,21 @@ struct FluddWeapons : sms::Mod {
 		return kRangeScale[r >= 0 && r < kRangeCount ? r : 0];
 	}
 
-	// the rocket jump key held now (the keyboard's: player 1's) or a controller's L
+	// the controller's rocket jump button held (the setting's: L, pressed or its trigger half way)
+	bool padRocketHeld(const SmsPad& p) const
+	{
+		const int b = setting("rocket_jump_pad", 0);
+		const int i = b >= 0 && b < kRocketPadCount ? b : 0;
+		if (i == 0)
+			return (p.held & SMS_PAD_L) || p.trigger_l >= 0.5f;
+		return kRocketPadBits[i] && (p.held & kRocketPadBits[i]);
+	}
+
+	// the rocket jump key held now (the keyboard's: player 1's) or the controller's rocket jump button
 	bool rocketKeyHeld() const
 	{
 		const SmsPad p = pad(cur);
-		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
+		if (padRocketHeld(p))
 			return true;
 		if (cur != 0)
 			return false;
@@ -514,7 +529,7 @@ struct FluddWeapons : sms::Mod {
 		return sc > 0 && input().key_down(sc);
 	}
 
-	// third person: rocket jumps on there and the rocket jump key (or a controller's L) held, the
+	// third person: rocket jumps on there and the rocket jump key (or the controller's button) held, the
 	// bazooka on his back turned down behind him
 	bool thirdRocketDown() const
 	{
@@ -526,9 +541,7 @@ struct FluddWeapons : sms::Mod {
 		const int mode = setting("rocket_jump", 2);
 		if (mode != 2)
 			return mode == 1;
-		const int k  = setting("rocket_jump_key", 1);
-		const int sc = input().key_from_name(kRocketKeys[k >= 0 && k < kRocketKeyCount ? k : 0]);
-		return sc > 0 && input().key_down(sc);
+		return rocketKeyHeld(); // the key, or the controller's button
 	}
 
 	// A weapon's numbers from the menu for this mod's shots
@@ -762,6 +775,8 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up", true);
 		preset.optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
+		preset.optionChoice("rocket_jump_pad", "Rocket jump controller button",
+		             std::vector<const char*>(kRocketPads, kRocketPads + kRocketPadCount), 0);
 		preset.optionBool("rocket_jump_third", "Bazooka rocket jumps in third person (hold the rocket jump key)", false);
 		preset.optionChoice("rocket_jump_key", "Rocket jump key",
 		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 1);
