@@ -116,6 +116,7 @@ struct FluddWeapons : sms::Mod {
 	struct Player {
 		int weapon    = 0;     // the weapon chosen (kWeaponNames)
 		bool numberWasDown[kWeaponCount] = {};
+		float slideFor = 0.0f; // seconds belly sliding without a stop (5 give the Black goop)
 		bool rHeld    = false; // R, as the controller has it (kept from the game while a weapon fires)
 		bool zoomed   = false; // the Rifle's zoom
 		bool zoomFromThird = false; // zoomed from third person (into first person for it)
@@ -137,6 +138,7 @@ struct FluddWeapons : sms::Mod {
 	float startY    = 0.0f;  // where player 1 started the stage, up and down (climbing high gives the Rifle)
 	bool haveStart  = false;
 	uint32_t luck   = 2463534242u; // a 1-Up's random weapon
+	double protoHitAt = -100.0;    // Proto Piranha last hit (the Shine it leaves, soon after, beats it)
 
 	// co-op: the players, and the game's api acting on one (-1: the one the game runs as)
 	int players() const
@@ -970,7 +972,7 @@ struct FluddWeapons : sms::Mod {
 		});
 		// with "Weapons come from nozzles": burned (fire, fire goop) gives the Fire goop, shocked
 		// (electric goop, an electric enemy) the Electric goop, for the rest of the stage
-		on(SMS_EV_TICK, [this](SmsEvent&) {
+		on<SmsEvTick>(SMS_EV_TICK, [this](SmsEvTick& t) {
 			if (!setting("weapons_from_nozzles", 1) || !playing)
 				return;
 			if (api().game->coins && api().game->coins() >= 60) // 60 coins: every weapon
@@ -989,6 +991,12 @@ struct FluddWeapons : sms::Mod {
 					unlockWeapons(1u << 1, "Rifle picked up");
 				if (m.on_yoshi) // Yoshi's juice, quick as it comes: the Submachine gun
 					unlockWeapons(1u << 2, "Submachine gun picked up");
+				// belly sliding 5 seconds without a stop (after a dive, down a slope, on a slippery floor):
+				// MARIO_STATUS_SPEED_SLIDING, _SLIP_FORE, _OIL_SLIP
+				float& slide = P().slideFor;
+				slide = st == 0x44Cu || st == 0x840452u || st == 0x84045Du ? slide + t.dt : 0.0f;
+				if (slide >= 5.0f)
+					unlockWeapons(1u << 6, "Black goop picked up");
 				if (st == 0x208B4u || st == 0x20449u || st == 0x208B7u) // MARIO_STATUS_FIRE_JUMP, _FIRE_DASH, _FIRE_DOWN
 					unlockWeapons(1u << 4, "Fire goop picked up");
 				else if (st == 0x20338u || st == 0x21313u) // MARIO_STATUS_ELECTRIC_DAMAGE, _ELEC_DOWN
@@ -1008,6 +1016,11 @@ struct FluddWeapons : sms::Mod {
 			m.size      = sizeof m;
 			if (api().player->get(&m) && m.valid && m.in_water)
 				unlockWeapons(1u << 5, "Electric goop picked up");
+		});
+		// Proto Piranha beaten (the Shine it leaves, soon after the last hit on it) gives the Black goop
+		on(SMS_EV_SHINE_APPEAR, [this](SmsEvent&) {
+			if (setting("weapons_from_nozzles", 1) && playing && core().time() - protoHitAt < 20.0)
+				unlockWeapons(1u << 6, "Black goop picked up");
 		});
 		// the stage's first blue coin gives the Black goop
 		on<SmsEvItem>(SMS_EV_ITEM_COLLECTED, [this](SmsEvItem& e) {
@@ -1110,6 +1123,8 @@ struct FluddWeapons : sms::Mod {
 				gp.draw(e);
 		});
 		on<SmsEvHit>(SMS_EV_OBJECT_HIT, [this](SmsEvHit& e) -> int {
+			if (e.object && SMS_API_HAS(api().actor, kind) && api().actor->kind(e.object) == SMS_KIND_PROTO_PIRANHA)
+				protoHitAt = core().time();
 			if (ownGoop() && gp.onHit(e) == SMS_CANCEL)
 				return SMS_CANCEL;
 			return ownShots() ? eng.onHit(e) : SMS_CONTINUE;
