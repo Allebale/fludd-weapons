@@ -16,6 +16,7 @@
 #include "models.h"
 #include "goop.h"
 #include "coins.h"
+#include "aim.h"
 
 // the weapons (the menu's): the mod's own numbers
 enum { W_NORMAL = 0, W_SHOTGUN = 1, W_RIFLE = 2, W_BAZOOKA = 3, W_SMG = 4, W_FIRE_GOOP = 5, W_ELECTRIC_GOOP = 6, W_BLACK_GOOP = 7 };
@@ -93,6 +94,9 @@ struct FluddWeapons : sms::Mod {
 	SmsMesh held[3] = {}, pack[3] = {}, packGun[3] = {}; // the weapons' models (api->models)
 	bool modelsMade = false;
 	coins::Magnet magnet;       // the Rifle's Coin Magnet
+	aim::Shoulder shoulder;     // the shoulder aim (a third-person shooter's)
+	int aimKey = -1;            // its key (key.aim; none by default: L is the controller's)
+	double lastCamera = 0;
 	float muzzleOf[2][3] = {};  // each player's pack's gun's muzzle, as last placed (third person)
 	SmsVec3 muzzleMario[2] = {}; // where Mario was then
 	double muzzleAt[2]     = {-10.0, -10.0};
@@ -869,6 +873,8 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 		preset.optionNumber("rocket_jump_power_third", "Bazooka rocket jump height in third person (percent)", 150, 10, 300, 10);
 		preset.optionBool("rifle_coin_magnet", "Enemies defeated with the Rifle's scope send their coins to you", true);
+		preset.optionBool("shoulder_aim", "Shooter aim in third person (hold L, aim with the mouse)", false);
+		preset.optionNumber("shoulder_aim_speed", "Shooter aim mouse speed (percent)", 100, 20, 300, 10);
 		preset.optionBool("rocket_key_launch", "Bazooka rocket jump key shots launch enemies up", true);
 		preset.optionBool("rocket_air_pop", "Bazooka shots defeat enemies in the air at once", true);
 		preset.optionNumber("rocket_key_launch_height", "Bazooka rocket jump key launch height (percent)", 80, 10, 300, 10);
@@ -919,6 +925,10 @@ struct FluddWeapons : sms::Mod {
 		on<SmsEvPadRead>(SMS_EV_PAD_READ, [this](SmsEvPadRead& r) {
 			if (!r.pads)
 				return;
+			if (players() == 1 && setting("shoulder_aim", 0)) // the shoulder aim's button, and while aiming the stick
+				shoulder.padRead(r.pads[0], aimKey > 0 && api().input->key_down(aimKey));
+			else
+				shoulder.held = false;
 			for (int pl = 0; pl < players(); pl++) { // each player's own controller (co-op)
 				For w(*this, pl);
 				padRead(r.pads[pl]);
@@ -954,6 +964,8 @@ struct FluddWeapons : sms::Mod {
 				self->magnet.scopedShot(pl & 1, self->eng.time);
 		};
 		magnet.mod    = handle();
+		shoulder.api  = &api();
+		aimKey        = api().input->bind_key(handle(), "aim", "");
 		on<SmsEvActor>(SMS_EV_ACTOR_SPAWN, [this](SmsEvActor& e) { magnet.spawned(e.object, e.actor_type, eng.time); });
 		eng.defeatCtx = this;
 		eng.onDefeat  = [](void* ctx, int pl, int weapon, const shots::V& at) {
@@ -1160,10 +1172,20 @@ struct FluddWeapons : sms::Mod {
 				gp.onHitDone(e);
 		});
 
-		on<SmsEvCamera>(SMS_EV_CAMERA, [this](SmsEvCamera&) {
+		on<SmsEvCamera>(SMS_EV_CAMERA, [this](SmsEvCamera& c) {
 			cur = playerNow(); // each player's camera (co-op: the game runs as them)
 			update();
 			cur = 0;
+			// the shoulder aim: single player, third person, while playing
+			const double now = core().time();
+			float dt = (float)(now - lastCamera);
+			lastCamera = now;
+			dt = dt > 0.1f ? 0.1f : dt < 0.0f ? 0.0f : dt;
+			const bool can = setting("shoulder_aim", 0) && players() == 1 && !firstPerson() && playing && canFire() && !holding();
+			shoulder.camera(c, can, setting("shoulder_aim_speed", 100) / 100.0f, dt);
+			eng.aimOn    = shoulder.active;
+			eng.aimPoint = shoulder.point;
+			eng.aimWay   = aim::Shoulder::forward(shoulder.yaw, shoulder.pitch);
 		});
 
 		// each view as the game draws it, before its HUD: that player's scope there (under the HUD)
@@ -1176,6 +1198,7 @@ struct FluddWeapons : sms::Mod {
 			if (d.mode != SMS_MODE_STAGE)
 				return;
 			drawScope(); // (co-op: each player's in their half)
+			shoulder.drawCrosshair(draw());
 			if (core().time() > toastUntil)
 				return;
 			char text[64];

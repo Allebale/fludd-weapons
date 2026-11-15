@@ -413,6 +413,12 @@ struct Engine {
 		m.size      = sizeof m;
 		if (!api->player->get(&m) || !m.valid)
 			return false;
+		if (aimOn) { // the shoulder aim (aim.h): to the crosshair, from about his shoulders
+			*eye = V(m.position.x, m.position.y + 110.0f, m.position.z);
+			const V to = aimPoint - *eye;
+			*f = to.len() > 200.0f ? to.unit() : aimWay;
+			return true;
+		}
 		const float a = m.yaw * (3.14159265f / 180.0f);
 		const V fwd(sinf(a), 0.0f, cosf(a));
 		*eye = V(m.position.x, m.position.y + 100.0f, m.position.z);
@@ -1819,6 +1825,9 @@ struct Engine {
 	// told of each Rifle shot: who fired, from where, which way and how far it goes (the Coin Magnet)
 	void* rifleCtx = 0;
 	void (*rifleShot)(void* ctx, int player, const V& from, const V& way, float len) = 0;
+	// the shoulder aim (aim.h): third person shots go to the crosshair's point
+	bool aimOn = false;
+	V aimPoint, aimWay;
 	// told of each enemy a weapon's shots defeat, where it was (the Coin Magnet)
 	void* defeatCtx = 0;
 	void (*onDefeat)(void* ctx, int player, int weapon, const V& at) = 0;
