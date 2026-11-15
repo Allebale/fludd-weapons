@@ -48,6 +48,7 @@ struct Shoulder {
 	bool pointOk   = false;
 	V camAt;                // the camera, as placed this frame
 	int invert     = 0;     // kInvertNames
+	float fov      = 0.0f;  // the aim's field of view (degrees; 0 the game's)
 	// the points the aimed drops fly to (kAimTag's number)
 	V targets[256];
 	uint32_t nextTarget = 0;
@@ -196,6 +197,8 @@ struct Shoulder {
 		const V np = gp + (cam - gp) * b, nt = gt + (tgt - gt) * b;
 		c.position = np.s();
 		c.target   = nt.s();
+		if (fov > 1.0f) // the aim's own field of view
+			c.fovy = c.fovy + (fov - c.fovy) * b;
 
 		if (!active) {
 			release();
@@ -236,27 +239,55 @@ struct Shoulder {
 		steerUntil       = now + 4.0;
 	}
 
-	// Each tick: the aimed drops still flying, straight on to their point at their speed (gravity
-	// left out), until they are about to reach it
+	// Each tick: each aimed drop still flying given the arc, at its speed, that lands it on its
+	// point (gravity as the game gives it, measured from the drops themselves; worked out again each
+	// tick, so the game's slowing of the drops is made up for). Out of reach, the furthest arc: it
+	// falls short as water does.
+	float gravity       = 0.5f;   // units a tick, each tick (learnt)
+	float lastVy[256]   = {};     // the up speed given to a tag's drops last tick
+	bool lastSet[256]   = {};
 	void steer(double now)
 	{
 		const SmsWaterApi* w = api->water;
 		if (now > steerUntil || !w || !SHOTS_HAS(w, SmsWaterApi, set))
 			return;
+		bool setNow[256] = {};
+		float vyNow[256];
 		const int n = w->count();
 		for (int i = 0; i < n; i++) {
 			SmsWaterDrop d = SmsWaterDrop();
 			d.size         = sizeof d;
 			if (!w->get(i, &d) || !aimedTag(d.tag) || d.landed)
 				continue;
+			const uint32_t k = d.tag & 0xFFu;
 			const V at(d.position), v(d.velocity);
-			const V to    = targets[d.tag & 0xFFu] - at;
-			const float l = to.len(), speed = v.len();
-			if (speed < 1.0f || l < speed * 1.5f)
+			if (lastSet[k]) { // what the game did to it since: its gravity
+				const float g = lastVy[k] - v.y;
+				if (g > 0.01f && g < 20.0f)
+					gravity += (g - gravity) * 0.2f;
+			}
+			const V to       = targets[k] - at;
+			const float flat = sqrtf(to.x * to.x + to.z * to.z), speed = v.len();
+			if (speed < 1.0f || to.len() < speed * 1.5f || flat < 1.0f)
 				continue; // there: it lands as ever
-			const V nv = to * (speed / l);
+			const float g = gravity, v2 = speed * speed;
+			const float disc = v2 * v2 - g * (g * flat * flat + 2.0f * to.y * v2);
+			float ang;
+			if (disc >= 0.0f)
+				ang = atanf((v2 - sqrtf(disc)) / (g * flat)); // the lower arc
+			else
+				ang = 0.7854f;                               // out of reach: the furthest
+			const V hz(to.x / flat, 0.0f, to.z / flat);
+			const V nv = hz * (speed * cosf(ang)) + V(0.0f, speed * sinf(ang), 0.0f);
 			d.velocity = nv.s();
 			w->set(i, &d);
+			setNow[k] = true;
+			vyNow[k]  = nv.y;
+		}
+		for (int k = 0; k < 256; k++) {
+			lastSet[k] = setNow[k];
+			if (setNow[k])
+				lastVy[k] = vyNow[k];
 		}
 	}
 

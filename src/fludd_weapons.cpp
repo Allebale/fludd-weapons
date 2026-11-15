@@ -875,6 +875,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("rifle_coin_magnet", "Enemies defeated with the Rifle's scope send their coins to you", true);
 		preset.optionBool("shoulder_aim", "Shooter aim in third person (hold L, aim with the mouse)", false);
 		preset.optionNumber("shoulder_aim_speed", "Shooter aim mouse speed (percent)", 100, 20, 300, 10);
+		preset.optionNumber("shoulder_aim_fov", "Shooter aim field of view (degrees)", 55, 30, 100, 1);
 		preset.optionChoice("shoulder_aim_invert", "Shooter aim inverted",
 		                    std::vector<const char*>(aim::kInvertNames, aim::kInvertNames + 4), 0);
 		preset.optionChoice("shoulder_aim_crosshair_color", "Shooter aim crosshair color",
@@ -1192,6 +1193,7 @@ struct FluddWeapons : sms::Mod {
 			dt = dt > 0.1f ? 0.1f : dt < 0.0f ? 0.0f : dt;
 			const bool can = setting("shoulder_aim", 0) && players() == 1 && !firstPerson() && playing && canFire() && !holding();
 			shoulder.invert = setting("shoulder_aim_invert", 0);
+			shoulder.fov    = (float)setting("shoulder_aim_fov", 55);
 			shoulder.camera(c, can, setting("shoulder_aim_speed", 100) / 100.0f, dt);
 			eng.aimOn    = shoulder.active;
 			eng.aimPoint = shoulder.point;
