@@ -202,14 +202,13 @@ struct Shoulder {
 		if (to.len() < 200.0f) // too near (a wall in his face): the aim's way
 			to = f;
 		const float tf = sqrtf(to.x * to.x + to.z * to.z);
-		// Left and right: towards the crosshair's line where his water comes down (about kReach
-		// away), not its far end, so the stream lands under the crosshair, not off to his side of it
-		const float kReach = 800.0f;
-		const float hitDist = (point - cam).len();
-		const V landing = cam + f * (hitDist < kReach ? hitDist : kReach);
-		const V side    = landing - from;
-		const float ay  = (sqrtf(side.x * side.x + side.z * side.z) > 50.0f ? atan2f(side.x, side.z) : atan2f(to.x, to.z)) / kDeg;
-		const float ap  = atan2f(to.y, tf) / kDeg;
+		// Straight at the crosshair's point from his nozzle, a little higher the further it is, as
+		// water drops on the way: up to the stream's reach it lands on the crosshair; further, it
+		// comes down short of it, as FLUDD's water does
+		const float dist = tf;
+		const float lift = dist < 250.0f ? 0.0f : (dist - 250.0f) * 0.006f; // degrees
+		const float ay   = atan2f(to.x, to.z) / kDeg;
+		const float ap   = atan2f(to.y, tf) / kDeg + (lift > 9.0f ? 9.0f : lift);
 		if (SHOTS_HAS(api->player, SmsPlayerApi, set_aim)) {
 			api->player->set_aim(1, ay, ap);
 			aimSet = true;
