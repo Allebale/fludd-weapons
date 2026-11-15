@@ -873,12 +873,12 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 		preset.optionNumber("rocket_jump_power_third", "Bazooka rocket jump height in third person (percent)", 150, 10, 300, 10);
 		preset.optionBool("rifle_coin_magnet", "Enemies defeated with the Rifle's scope send their coins to you", true);
-		preset.optionBool("shoulder_aim", "Shooter aim in third person (hold L, aim with the mouse)", false);
+		preset.optionBool("shoulder_aim", "Shooter aim in third person (hold L, aim with the mouse)", true);
 		preset.optionNumber("shoulder_aim_speed", "Shooter aim mouse speed (percent)", 100, 20, 300, 10);
-		preset.optionNumber("shoulder_aim_fov", "Shooter aim field of view (degrees)", 55, 30, 100, 1);
+		preset.optionNumber("shoulder_aim_fov", "Shooter aim field of view (degrees)", 50, 30, 100, 1);
 		preset.optionChoice("shoulder_aim_invert", "Shooter aim inverted",
-		                    std::vector<const char*>(aim::kInvertNames, aim::kInvertNames + 4), 0);
-		preset.optionNumber("shoulder_aim_crosshair_x", "Shooter aim crosshair left or right (percent, right is more)", 0, -50, 50, 1);
+		                    std::vector<const char*>(aim::kInvertNames, aim::kInvertNames + 4), 3);
+		preset.optionNumber("shoulder_aim_crosshair_x", "Shooter aim crosshair left or right (percent, right is more)", -3, -50, 50, 1);
 		preset.optionChoice("shoulder_aim_crosshair_color", "Shooter aim crosshair color",
 		                    std::vector<const char*>(aim::kCrossNames, aim::kCrossNames + aim::kCrossCount), 8);
 		preset.optionBool("rocket_key_launch", "Bazooka rocket jump key shots launch enemies up", true);
@@ -931,7 +931,7 @@ struct FluddWeapons : sms::Mod {
 		on<SmsEvPadRead>(SMS_EV_PAD_READ, [this](SmsEvPadRead& r) {
 			if (!r.pads)
 				return;
-			if (players() == 1 && setting("shoulder_aim", 0)) // the shoulder aim's button, and while aiming the stick
+			if (players() == 1 && setting("shoulder_aim", 1)) // the shoulder aim's button, and while aiming the stick
 				shoulder.padRead(r.pads[0], aimKey > 0 && api().input->key_down(aimKey));
 			else
 				shoulder.held = false;
@@ -1187,11 +1187,11 @@ struct FluddWeapons : sms::Mod {
 			float dt = (float)(now - lastCamera);
 			lastCamera = now;
 			dt = dt > 0.1f ? 0.1f : dt < 0.0f ? 0.0f : dt;
-			const bool can = setting("shoulder_aim", 0) && players() == 1 && !firstPerson() && playing && canFire() && !holding();
-			shoulder.invert = setting("shoulder_aim_invert", 0);
-			shoulder.fov    = (float)setting("shoulder_aim_fov", 55);
+			const bool can = setting("shoulder_aim", 1) && players() == 1 && !firstPerson() && playing && canFire() && !holding();
+			shoulder.invert = setting("shoulder_aim_invert", 3);
+			shoulder.fov    = (float)setting("shoulder_aim_fov", 50);
 			shoulder.straight = shotWeapon(chosen());
-			shoulder.crossX = setting("shoulder_aim_crosshair_x", 0) / 100.0f;
+			shoulder.crossX = setting("shoulder_aim_crosshair_x", -3) / 100.0f;
 			shoulder.camera(c, can, setting("shoulder_aim_speed", 100) / 100.0f, dt);
 			eng.aimOn    = shoulder.active;
 			eng.aimPoint = shoulder.point;
