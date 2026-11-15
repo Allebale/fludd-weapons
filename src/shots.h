@@ -508,6 +508,8 @@ struct Engine {
 			if (st)
 				st->from = from;
 		}
+		if (weapon == RIFLE && st && !down && rifleShot) // the Coin Magnet (coins.h)
+			rifleShot(rifleCtx, player, from, way, st->aim > 1.0f ? st->aim : st->reachTo);
 		SmsWaterDrop out = SmsWaterDrop();
 		out.size        = sizeof out;
 		out.position    = from.s();
@@ -1811,6 +1813,9 @@ struct Engine {
 	// where a player's shots start in third person: its pack's gun's muzzle (the models' own), if any
 	void* muzzleCtx = 0;
 	bool (*muzzle)(void* ctx, int player, float* out) = 0;
+	// told of each Rifle shot: who fired, from where, which way and how far it goes (the Coin Magnet)
+	void* rifleCtx = 0;
+	void (*rifleShot)(void* ctx, int player, const V& from, const V& way, float len) = 0;
 
 	// a mod's own goop washed by a burst (the goop weapons', goop.h): its own puddles too
 	void* washCtx = 0;

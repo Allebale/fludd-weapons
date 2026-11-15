@@ -15,6 +15,7 @@
 #include "shots.h"
 #include "models.h"
 #include "goop.h"
+#include "coins.h"
 
 // the weapons (the menu's): the mod's own numbers
 enum { W_NORMAL = 0, W_SHOTGUN = 1, W_RIFLE = 2, W_BAZOOKA = 3, W_SMG = 4, W_FIRE_GOOP = 5, W_ELECTRIC_GOOP = 6, W_BLACK_GOOP = 7 };
@@ -91,6 +92,7 @@ struct FluddWeapons : sms::Mod {
 	goop::Goop gp;     // the goop weapons (the mod API's tagged drops, landings, pictures)
 	SmsMesh held[3] = {}, pack[3] = {}, packGun[3] = {}; // the weapons' models (api->models)
 	bool modelsMade = false;
+	coins::Magnet magnet;       // the Rifle's Coin Magnet
 	float muzzleOf[2][3] = {};  // each player's pack's gun's muzzle, as last placed (third person)
 	SmsVec3 muzzleMario[2] = {}; // where Mario was then
 	double muzzleAt[2]     = {-10.0, -10.0};
@@ -866,6 +868,8 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 		preset.optionNumber("rocket_jump_power_third", "Bazooka rocket jump height in third person (percent)", 150, 10, 300, 10);
+		preset.optionBool("rifle_coin_magnet", "Rifle shots pull coins to you (Coin Magnet)", false);
+		preset.optionNumber("rifle_coin_magnet_reach", "Coin Magnet reach round a Rifle shot (units)", 300, 50, 2000, 50);
 		preset.optionBool("rocket_key_launch", "Bazooka rocket jump key shots launch enemies up", true);
 		preset.optionBool("rocket_air_pop", "Bazooka shots defeat enemies in the air at once", true);
 		preset.optionNumber("rocket_key_launch_height", "Bazooka rocket jump key launch height (percent)", 80, 10, 300, 10);
@@ -942,6 +946,14 @@ struct FluddWeapons : sms::Mod {
 			out[2] = self->muzzleOf[pl][2] + m.position.z - self->muzzleMario[pl].z;
 			return true;
 		};
+		magnet.api   = &api();
+		eng.rifleCtx = this;
+		eng.rifleShot = [](void* ctx, int pl, const shots::V& from, const shots::V& way, float len) {
+			FluddWeapons* self = static_cast<FluddWeapons*>(ctx);
+			if (self->setting("rifle_coin_magnet", 0))
+				self->magnet.shot(pl & 1, from, way, len, (float)self->setting("rifle_coin_magnet_reach", 300), self->eng.time);
+		};
+		on<SmsEvItemSetup>(SMS_EV_ITEM_SETUP, [this](SmsEvItemSetup& e) { magnet.itemSetup(e); });
 		eng.washCtx  = &gp;
 		eng.washGoop = [](void* g, float x, float y, float z, float r) { static_cast<goop::Goop*>(g)->washBurst(x, y, z, r); };
 		if (ownShots())
@@ -955,6 +967,7 @@ struct FluddWeapons : sms::Mod {
 			}
 			eng.stageReset();
 			gp.stageReset();
+			magnet.stageLoaded();
 		});
 		on(SMS_EV_STAGE_START, [this](SmsEvent&) { playing = true; });
 		// a nozzle picked up (out of its box or lying in the stage), not getting off Yoshi (his juice
@@ -1046,6 +1059,15 @@ struct FluddWeapons : sms::Mod {
 			const bool fireNow = canFire();
 			const float dt = t.dt * 30.0f; // 30ths of a second
 			eng.time += t.dt;
+			magnet.tick(eng.time, t.dt, [this](int pl, shots::V* at) -> bool {
+				For f(*this, pl);
+				SmsPlayer m = SmsPlayer();
+				m.size      = sizeof m;
+				if (!api().player->get(&m) || !m.valid)
+					return false;
+				*at = shots::V(m.position);
+				return true;
+			});
 			for (int w = 1; w < shots::WEAPONS; w++)
 				eng.setStats(w, shotSettings(w));
 			eng.followStraight(dt);
