@@ -55,12 +55,64 @@ struct Magnet {
 
 	void stageLoaded()
 	{
-		pulling = 0;
+		pulling    = 0;
+		freshCount = 0;
 		for (int w = 0; w < kWatch; w++)
 			spots[w].until = -100;
 		scopedAt[0] = scopedAt[1] = -100;
 	}
 	void scopedShot(int player, double now) { scopedAt[player & 1] = now; }
+
+	// coins just made to appear (SMS_EV_ACTOR_SPAWN: an enemy's drops come out of the item manager's
+	// pool), judged next tick, when the enemy has put them where it is
+	static const int kNew = 32;
+	struct Fresh {
+		SmsObject coin;
+		double until;
+	};
+	Fresh fresh[kNew];
+	int freshCount = 0;
+	bool watching(double now) const
+	{
+		for (int w = 0; w < kWatch; w++)
+			if (now <= spots[w].until)
+				return true;
+		return false;
+	}
+	void spawned(SmsObject o, uint32_t type, double now)
+	{
+		if (!isCoin(type) || !watching(now) || freshCount >= kNew)
+			return;
+		fresh[freshCount].coin  = o;
+		fresh[freshCount].until = now + 0.5;
+		freshCount++;
+		if (api->core)
+			api->core->log(mod, SMS_LOG_INFO, "coin magnet: a coin came out while watching a kill");
+	}
+	// a coin near a watched kill: off to its player
+	bool take(SmsObject c, const V& p, double now)
+	{
+		for (int w = 0; w < kWatch && pulling < kPulled; w++) {
+			Spot& sp = spots[w];
+			if (now > sp.until || (p - sp.at).len() > kDropReach * 2.0f)
+				continue;
+			for (int k = 0; k < sp.seenCount; k++)
+				if (sp.seen[k] == c)
+					return false;
+			if (isPulled(c))
+				return false;
+			if (sp.seenCount < kSeen)
+				sp.seen[sp.seenCount++] = c;
+			Pull& n  = pulled[pulling++];
+			n.coin   = c;
+			n.player = sp.player;
+			n.until  = now + 4.0;
+			if (api->core)
+				api->core->log(mod, SMS_LOG_INFO, "coin magnet: a coin on its way to player %d", sp.player + 1);
+			return true;
+		}
+		return false;
+	}
 
 	bool out(SmsObject c) const
 	{
@@ -110,7 +162,7 @@ struct Magnet {
 				sp = &spots[i];
 		sp->at        = at;
 		sp->player    = player;
-		sp->until     = now + 3.0;
+		sp->until     = now + 6.0; // its coins come out as its defeat ends
 		sp->seenCount = coinsNear(at, sp->seen, kSeen);
 		if (api->core)
 			api->core->log(mod, SMS_LOG_INFO, "coin magnet: watching a Rifle kill for its coins (%d coins already there)",
@@ -119,27 +171,27 @@ struct Magnet {
 
 	void watch(double now)
 	{
+		// the coins made to appear lately, now where their enemy put them
+		int kept = 0;
+		for (int i = 0; i < freshCount; i++) {
+			V p;
+			if (out(fresh[i].coin) && where(fresh[i].coin, &p) && take(fresh[i].coin, p, now))
+				continue;
+			if (now <= fresh[i].until)
+				fresh[kept++] = fresh[i];
+		}
+		freshCount = kept;
+		// and any coin out round a watched kill
 		for (int w = 0; w < kWatch; w++) {
 			Spot& sp = spots[w];
 			if (now > sp.until)
 				continue;
 			SmsObject found[32];
 			const int n = coinsNear(sp.at, found, 32);
-			for (int i = 0; i < n && pulling < kPulled; i++) {
-				const SmsObject c = found[i];
-				bool old = false;
-				for (int k = 0; k < sp.seenCount; k++)
-					old = old || sp.seen[k] == c;
-				if (old || isPulled(c))
-					continue;
-				if (sp.seenCount < kSeen)
-					sp.seen[sp.seenCount++] = c;
-				Pull& p  = pulled[pulling++];
-				p.coin   = c;
-				p.player = sp.player;
-				p.until  = now + 4.0;
-				if (api->core)
-					api->core->log(mod, SMS_LOG_INFO, "coin magnet: a coin on its way to player %d", sp.player + 1);
+			for (int i = 0; i < n; i++) {
+				V p;
+				if (where(found[i], &p))
+					take(found[i], p, now);
 			}
 		}
 	}

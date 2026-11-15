@@ -954,6 +954,7 @@ struct FluddWeapons : sms::Mod {
 				self->magnet.scopedShot(pl & 1, self->eng.time);
 		};
 		magnet.mod    = handle();
+		on<SmsEvActor>(SMS_EV_ACTOR_SPAWN, [this](SmsEvActor& e) { magnet.spawned(e.object, e.actor_type, eng.time); });
 		eng.defeatCtx = this;
 		eng.onDefeat  = [](void* ctx, int pl, int weapon, const shots::V& at) {
 			FluddWeapons* self = static_cast<FluddWeapons*>(ctx);
