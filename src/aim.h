@@ -18,11 +18,6 @@ using shots::V;
 
 const float kDeg = 3.14159265f / 180.0f;
 
-// FLUDD's own drops sprayed while aiming carry this tag (with the number of the crosshair point they
-// fly to): they are steered straight to it each tick, so the water lands where the crosshair is
-const uint32_t kAimTag = 0x5C000000u;
-inline bool aimedTag(uint32_t tag) { return (tag & 0xFF000000u) == kAimTag; }
-
 // the crosshair's colors, as the First Person mod's (its "crosshair_color" setting)
 const char* const kCrossNames[] = {"White", "Red", "Green", "Blue", "Yellow", "Cyan", "Pink", "Orange", "Grey", "Black"};
 const SmsColor kCrossColors[]   = {SMS_RGB(255, 255, 255), SMS_RGB(255, 60, 60),  SMS_RGB(70, 230, 90),
@@ -49,10 +44,6 @@ struct Shoulder {
 	V camAt;                // the camera, as placed this frame
 	int invert     = 0;     // kInvertNames
 	float fov      = 0.0f;  // the aim's field of view (degrees; 0 the game's)
-	// the points the aimed drops fly to (kAimTag's number)
-	V targets[256];
-	uint32_t nextTarget = 0;
-	double steerUntil   = 0;
 
 	static V forward(float yawDeg, float pitchDeg)
 	{
@@ -178,7 +169,7 @@ struct Shoulder {
 		// over the shoulder: behind him, a little right and up, kept out of the walls
 		const V f     = forward(yaw, pitch);
 		const V r     = right(yaw);
-		const V pivot = m + V(0, 150.0f, 0) + r * 55.0f;
+		const V pivot = m + V(0, 150.0f, 0) + r * 85.0f; // Mario a little left of the crosshair
 		V want3 = pivot - f * 330.0f;
 		const V back = want3 - pivot;
 		const float len = back.len();
@@ -225,70 +216,6 @@ struct Shoulder {
 		aimSet = false;
 		if (blend <= 0.0f)
 			active = false;
-	}
-
-	// FLUDD about to spray while aiming (SMS_EV_WATER_EMIT, its own water: no tag yet): its drops
-	// tagged with the crosshair's point
-	void onEmit(SmsEvWaterEmit& e, double now)
-	{
-		if (!active || e.drop.tag)
-			return;
-		const uint32_t n = nextTarget++ & 0xFFu;
-		targets[n]       = point;
-		e.drop.tag       = kAimTag | n;
-		steerUntil       = now + 4.0;
-	}
-
-	// Each tick: each aimed drop still flying given the arc, at its speed, that lands it on its
-	// point (gravity as the game gives it, measured from the drops themselves; worked out again each
-	// tick, so the game's slowing of the drops is made up for). Out of reach, the furthest arc: it
-	// falls short as water does.
-	float gravity       = 0.5f;   // units a tick, each tick (learnt)
-	float lastVy[256]   = {};     // the up speed given to a tag's drops last tick
-	bool lastSet[256]   = {};
-	void steer(double now)
-	{
-		const SmsWaterApi* w = api->water;
-		if (now > steerUntil || !w || !SHOTS_HAS(w, SmsWaterApi, set))
-			return;
-		bool setNow[256] = {};
-		float vyNow[256];
-		const int n = w->count();
-		for (int i = 0; i < n; i++) {
-			SmsWaterDrop d = SmsWaterDrop();
-			d.size         = sizeof d;
-			if (!w->get(i, &d) || !aimedTag(d.tag) || d.landed)
-				continue;
-			const uint32_t k = d.tag & 0xFFu;
-			const V at(d.position), v(d.velocity);
-			if (lastSet[k]) { // what the game did to it since: its gravity
-				const float g = lastVy[k] - v.y;
-				if (g > 0.01f && g < 20.0f)
-					gravity += (g - gravity) * 0.2f;
-			}
-			const V to       = targets[k] - at;
-			const float flat = sqrtf(to.x * to.x + to.z * to.z), speed = v.len();
-			if (speed < 1.0f || to.len() < speed * 1.5f || flat < 1.0f)
-				continue; // there: it lands as ever
-			const float g = gravity, v2 = speed * speed;
-			const float disc = v2 * v2 - g * (g * flat * flat + 2.0f * to.y * v2);
-			float ang;
-			if (disc >= 0.0f)
-				ang = atanf((v2 - sqrtf(disc)) / (g * flat)); // the lower arc
-			else
-				ang = 0.7854f;                               // out of reach: the furthest
-			const V hz(to.x / flat, 0.0f, to.z / flat);
-			const V nv = hz * (speed * cosf(ang)) + V(0.0f, speed * sinf(ang), 0.0f);
-			d.velocity = nv.s();
-			w->set(i, &d);
-			setNow[k] = true;
-			vyNow[k]  = nv.y;
-		}
-		for (int k = 0; k < 256; k++) {
-			lastSet[k] = setNow[k];
-			if (setNow[k])
-				lastVy[k] = vyNow[k];
-		}
 	}
 
 	// The crosshair, in the middle of the picture: the First Person mod's (a ring and a dot, with an

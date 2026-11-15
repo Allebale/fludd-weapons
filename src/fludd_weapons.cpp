@@ -1083,7 +1083,6 @@ struct FluddWeapons : sms::Mod {
 			const bool fireNow = canFire();
 			const float dt = t.dt * 30.0f; // 30ths of a second
 			eng.time += t.dt;
-			shoulder.steer(eng.time);
 			magnet.tick(eng.time, t.dt, [this](int pl, shots::V* at) -> bool {
 				For f(*this, pl);
 				SmsPlayer m = SmsPlayer();
@@ -1136,16 +1135,12 @@ struct FluddWeapons : sms::Mod {
 		});
 		// a player's FLUDD about to spray while a weapon of this mod's fires: none of its own stream
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int {
-			if (e.player == 0 && players() == 1 && !ownShots()) // the shoulder aim without the weapons: FLUDD's water to the crosshair
-				shoulder.onEmit(e, eng.time);
 			if (!ownShots() || e.player < 0 || e.player >= players())
 				return SMS_CONTINUE;
 			For f(*this, e.player);
 			const int w = weaponNow();
 			if (ownGoop()) // a goop weapon: FLUDD's own stream made goop (none: its water)
 				gp.onEmit(e, isGoop(w) && !shotWeapon(w) ? w : 0);
-			if (!shotWeapon(w) && e.player == 0 && players() == 1)
-				shoulder.onEmit(e, eng.time); // FLUDD's own water (no goop tag): to the crosshair
 			return shotWeapon(w) ? SMS_CANCEL : SMS_CONTINUE;
 		});
 		// a drop landing: goop leaves goop, water washes it (the SMG's shot a good splash, the
