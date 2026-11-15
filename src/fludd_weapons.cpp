@@ -868,8 +868,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 		preset.optionNumber("rocket_jump_power_third", "Bazooka rocket jump height in third person (percent)", 150, 10, 300, 10);
-		preset.optionBool("rifle_coin_magnet", "Rifle shots pull coins to you (Coin Magnet)", false);
-		preset.optionNumber("rifle_coin_magnet_reach", "Coin Magnet reach round a Rifle shot (units)", 300, 50, 2000, 50);
+		preset.optionBool("rifle_coin_magnet", "Enemies defeated with the Rifle's scope send their coins to you", false);
 		preset.optionBool("rocket_key_launch", "Bazooka rocket jump key shots launch enemies up", true);
 		preset.optionBool("rocket_air_pop", "Bazooka shots defeat enemies in the air at once", true);
 		preset.optionNumber("rocket_key_launch_height", "Bazooka rocket jump key launch height (percent)", 80, 10, 300, 10);
@@ -950,9 +949,13 @@ struct FluddWeapons : sms::Mod {
 		eng.rifleCtx = this;
 		eng.rifleShot = [](void* ctx, int pl, const shots::V& from, const shots::V& way, float len) {
 			FluddWeapons* self = static_cast<FluddWeapons*>(ctx);
-			if (self->setting("rifle_coin_magnet", 0))
-				self->magnet.shot(pl & 1, from, way, len, (float)self->setting("rifle_coin_magnet_reach", 300), self->eng.time);
+			if (self->setting("rifle_coin_magnet", 0) && self->ps[pl & 1].zoomed)  // through the scope
+				self->magnet.scopedShot(pl & 1, from, way, len, self->eng.time);
 		};
+		on<SmsEvActor>(SMS_EV_ACTOR_DEATH, [this](SmsEvActor& e) {
+			if (!e.forced && setting("rifle_coin_magnet", 0))
+				magnet.defeated(shots::V(e.position), eng.time);
+		});
 		on<SmsEvItemSetup>(SMS_EV_ITEM_SETUP, [this](SmsEvItemSetup& e) { magnet.itemSetup(e); });
 		eng.washCtx  = &gp;
 		eng.washGoop = [](void* g, float x, float y, float z, float r) { static_cast<goop::Goop*>(g)->washBurst(x, y, z, r); };

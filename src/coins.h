@@ -1,9 +1,11 @@
-// Coin Magnet: the Rifle's shots pull the coins they pass close to over to the player who fired, who
-// then picks them up as ever (the game's own touch: the coin's sound, count and health).
+// Coin Magnet: an enemy defeated by a Rifle shot through the scope sends the coins it drops over to
+// the player who fired, who then picks them up as ever (the game's own touch: the coin's sound, count
+// and health).
 //
 // Only mod API 1.8's general tools: the coins are learned as their stage loads (SMS_EV_ITEM_SETUP:
 // every coin, red and blue ones and those an enemy or a box will drop), and moved each tick with
-// actor->set_position. A coin that is gone (picked up) or not out (a box's, still inside) is left alone.
+// actor->set_position. The kill is known by SMS_EV_ACTOR_DEATH near the line of a scoped Rifle shot
+// of the last 2 seconds; its drops are the coins that come out near it after it died.
 #pragma once
 #include "shots.h"
 
@@ -40,6 +42,9 @@ struct Magnet {
 	{
 		fresh   = true;
 		pulling = 0;
+		for (int w = 0; w < kWatch; w++)
+			spots[w].until = -100;
+		lastShot[0].at = lastShot[1].at = -100;
 	}
 	void itemSetup(const SmsEvItemSetup& e)
 	{
@@ -73,27 +78,88 @@ struct Magnet {
 		return false;
 	}
 
-	// A Rifle shot from `from` along `way` for `len`: the coins within `reach` of its line start
-	// flying to `player`.
-	void shot(int player, const V& from, const V& way, float len, float reach, double now)
+	// Rifle shots through the scope, each player's last: an enemy defeated near one's line soon after
+	// is the Rifle's kill
+	struct Shot {
+		V from, way;
+		float len = 0;
+		double at = -100;
+	};
+	Shot lastShot[2];
+	void scopedShot(int player, const V& from, const V& way, float len, double now)
 	{
-		if (!hasTools() || len <= 0.0f)
+		Shot& s = lastShot[player & 1];
+		s.from = from, s.way = way, s.len = len, s.at = now;
+	}
+
+	// The places of the Rifle's kills, watched a while for the coins the enemy drops there
+	static const int kWatch = 8;
+	struct Spot {
+		V at;
+		int player = 0;
+		double until = -100;
+		uint32_t seen[kCoins / 32]; // the coins already out there as it died: not its drops
+	};
+	Spot spots[kWatch];
+	static constexpr float kDropReach = 350.0f; // how far round it its coins land
+
+	// An enemy defeated at `at`: when it was near a player's scoped Rifle shot of the last 2 seconds,
+	// the coins it drops there fly to that player.
+	void defeated(const V& at, double now)
+	{
+		if (!hasTools())
 			return;
-		for (int i = 0; i < count && pulling < kPulled; i++) {
-			const SmsObject c = coin[i];
+		int who = -1;
+		for (int p = 0; p < 2; p++) {
+			const Shot& s = lastShot[p];
+			if (now - s.at > 2.0)
+				continue;
+			const float along = (at - s.from).dot(s.way);
+			if (along < -200.0f || along > s.len + 400.0f)
+				continue;
+			if ((at - (s.from + s.way * along)).len() < 400.0f)
+				who = p;
+		}
+		if (who < 0)
+			return;
+		Spot* sp = &spots[0];
+		for (int i = 1; i < kWatch; i++)
+			if (spots[i].until < sp->until)
+				sp = &spots[i];
+		sp->at     = at;
+		sp->player = who;
+		sp->until  = now + 2.5;
+		for (int i = 0; i < kCoins / 32; i++)
+			sp->seen[i] = 0;
+		for (int i = 0; i < count; i++) {
 			V p;
-			if (isPulled(c) || !out(c) || !where(c, &p))
+			if (out(coin[i]) && where(coin[i], &p) && (p - at).len() < kDropReach * 2.0f)
+				sp->seen[i >> 5] |= 1u << (i & 31);
+		}
+	}
+
+	// the coins that have come out near a watched kill since it died: off to its player
+	void watch(double now)
+	{
+		for (int w = 0; w < kWatch; w++) {
+			Spot& sp = spots[w];
+			if (now > sp.until)
 				continue;
-			const float along = (p - from).dot(way);
-			if (along < 0.0f || along > len + reach)
-				continue;
-			const V off = p - (from + way * along);
-			if (off.len() > reach)
-				continue;
-			Pull& n  = pulled[pulling++];
-			n.coin   = c;
-			n.player = player;
-			n.until  = now + 3.0;
+			for (int i = 0; i < count && pulling < kPulled; i++) {
+				if (sp.seen[i >> 5] & (1u << (i & 31)))
+					continue;
+				V p;
+				const SmsObject c = coin[i];
+				if (!out(c) || !where(c, &p) || (p - sp.at).len() > kDropReach * 2.0f)
+					continue;
+				sp.seen[i >> 5] |= 1u << (i & 31);
+				if (isPulled(c))
+					continue;
+				Pull& n  = pulled[pulling++];
+				n.coin   = c;
+				n.player = sp.player;
+				n.until  = now + 4.0;
+			}
 		}
 	}
 
@@ -102,7 +168,10 @@ struct Magnet {
 	template <typename PlayerAt>
 	void tick(double now, float secs, PlayerAt playerAt)
 	{
-		if (!pulling || !hasTools())
+		if (!hasTools())
+			return;
+		watch(now);
+		if (!pulling)
 			return;
 		int kept = 0;
 		for (int i = 0; i < pulling; i++) {
