@@ -1943,7 +1943,7 @@ struct Engine {
 		d.size         = sizeof d;
 		if (slot < 0 || !api->water->get(slot, &d))
 			return;
-		if (!d.tag && d.player >= 0) {
+		if ((!d.tag || (d.tag & 0xFF000000u) == 0x5C000000u) && d.player >= 0) { // (0x5C: aimed, aim.h)
 			normalHit(ev.object); // FLUDD's own spray
 			return;
 		}

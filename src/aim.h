@@ -18,6 +18,21 @@ using shots::V;
 
 const float kDeg = 3.14159265f / 180.0f;
 
+// FLUDD's own drops sprayed while aiming carry this tag (with the number of the crosshair point they
+// fly to): they are steered straight to it each tick, so the water lands where the crosshair is
+const uint32_t kAimTag = 0x5C000000u;
+inline bool aimedTag(uint32_t tag) { return (tag & 0xFF000000u) == kAimTag; }
+
+// the crosshair's colors, as the First Person mod's (its "crosshair_color" setting)
+const char* const kCrossNames[] = {"White", "Red", "Green", "Blue", "Yellow", "Cyan", "Pink", "Orange", "Grey", "Black"};
+const SmsColor kCrossColors[]   = {SMS_RGB(255, 255, 255), SMS_RGB(255, 60, 60),  SMS_RGB(70, 230, 90),
+                                   SMS_RGB(70, 150, 255),  SMS_RGB(255, 225, 40), SMS_RGB(60, 235, 235),
+                                   SMS_RGB(255, 110, 200), SMS_RGB(255, 150, 40), SMS_RGB(150, 150, 150),
+                                   SMS_RGB(20, 20, 20)};
+const int kCrossCount = 10;
+// "shoulder_aim_invert": which of the aim's ways are turned round
+const char* const kInvertNames[] = {"Off", "Up and down", "Left and right", "Both"};
+
 struct Shoulder {
 	const SmsApi* api = nullptr;
 
@@ -32,6 +47,11 @@ struct Shoulder {
 	V point;                // where the crosshair is on the stage
 	bool pointOk   = false;
 	V camAt;                // the camera, as placed this frame
+	int invert     = 0;     // kInvertNames
+	// the points the aimed drops fly to (kAimTag's number)
+	V targets[256];
+	uint32_t nextTarget = 0;
+	double steerUntil   = 0;
 
 	static V forward(float yawDeg, float pitchDeg)
 	{
@@ -138,10 +158,11 @@ struct Shoulder {
 			if (SHOTS_HAS(h, SmsHeldFluddApi, take_mouse))
 				h->take_mouse(&dx, &dy);
 			const float s = 0.12f * sensitivity;
-			yaw -= dx * s;
-			pitch -= dy * s;
-			yaw -= cx * 150.0f * dt; // the C-stick, a controller's aim
-			pitch += cy * 100.0f * dt;
+			const float ix = (invert & 2) ? -1.0f : 1.0f, iy = (invert & 1) ? -1.0f : 1.0f;
+			yaw -= dx * s * ix;
+			pitch -= dy * s * iy;
+			yaw -= cx * 150.0f * dt * ix; // the C-stick, a controller's aim
+			pitch += cy * 100.0f * dt * iy;
 			pitch = pitch > 70.0f ? 70.0f : pitch < -60.0f ? -60.0f : pitch;
 			while (yaw > 180.0f)
 				yaw -= 360.0f;
@@ -203,24 +224,56 @@ struct Shoulder {
 			active = false;
 	}
 
-	// The crosshair, in the middle of the picture
-	void drawCrosshair(const SmsDrawApi& d) const
+	// FLUDD about to spray while aiming (SMS_EV_WATER_EMIT, its own water: no tag yet): its drops
+	// tagged with the crosshair's point
+	void onEmit(SmsEvWaterEmit& e, double now)
+	{
+		if (!active || e.drop.tag)
+			return;
+		const uint32_t n = nextTarget++ & 0xFFu;
+		targets[n]       = point;
+		e.drop.tag       = kAimTag | n;
+		steerUntil       = now + 4.0;
+	}
+
+	// Each tick: the aimed drops still flying, straight on to their point at their speed (gravity
+	// left out), until they are about to reach it
+	void steer(double now)
+	{
+		const SmsWaterApi* w = api->water;
+		if (now > steerUntil || !w || !SHOTS_HAS(w, SmsWaterApi, set))
+			return;
+		const int n = w->count();
+		for (int i = 0; i < n; i++) {
+			SmsWaterDrop d = SmsWaterDrop();
+			d.size         = sizeof d;
+			if (!w->get(i, &d) || !aimedTag(d.tag) || d.landed)
+				continue;
+			const V at(d.position), v(d.velocity);
+			const V to    = targets[d.tag & 0xFFu] - at;
+			const float l = to.len(), speed = v.len();
+			if (speed < 1.0f || l < speed * 1.5f)
+				continue; // there: it lands as ever
+			const V nv = to * (speed / l);
+			d.velocity = nv.s();
+			w->set(i, &d);
+		}
+	}
+
+	// The crosshair, in the middle of the picture: the First Person mod's (a ring and a dot, with an
+	// outline that shows on any ground), in its colors
+	void drawCrosshair(const SmsDrawApi& d, int ci) const
 	{
 		if (!active || blend < 0.6f)
 			return;
 		float w = 0, h = 0;
 		d.canvas(&w, &h);
-		const float x = w * 0.5f, y = h * 0.5f, s = h * 0.012f, gap = h * 0.007f;
-		const SmsColor shade = SMS_RGBA(0, 0, 0, 140), white = SMS_RGBA(255, 255, 255, 230);
-		for (int pass = 0; pass < 2; pass++) {
-			const float t = pass ? 2.0f : 4.0f;
-			const SmsColor c = pass ? white : shade;
-			d.line(x - gap - s, y, x - gap, y, t, c);
-			d.line(x + gap, y, x + gap + s, y, t, c);
-			d.line(x, y - gap - s, x, y - gap, t, c);
-			d.line(x, y + gap, x, y + gap + s, t, c);
-		}
-		d.circle(x, y, 1.6f, white);
+		const float x = w * 0.5f, y = h * 0.5f, r = h * 0.009f;
+		const SmsColor c    = kCrossColors[ci >= 0 && ci < kCrossCount ? ci : 0];
+		const SmsColor edge = ci == kCrossCount - 1 ? SMS_RGBA(255, 255, 255, 120) : SMS_RGBA(0, 0, 0, 110);
+		d.circle_outline(x, y, r, r * 0.55f, edge);
+		d.circle_outline(x, y, r, r * 0.25f, c);
+		d.circle(x, y, r * 0.22f, c);
 	}
 };
 

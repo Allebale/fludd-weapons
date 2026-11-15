@@ -875,6 +875,10 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("rifle_coin_magnet", "Enemies defeated with the Rifle's scope send their coins to you", true);
 		preset.optionBool("shoulder_aim", "Shooter aim in third person (hold L, aim with the mouse)", false);
 		preset.optionNumber("shoulder_aim_speed", "Shooter aim mouse speed (percent)", 100, 20, 300, 10);
+		preset.optionChoice("shoulder_aim_invert", "Shooter aim inverted",
+		                    std::vector<const char*>(aim::kInvertNames, aim::kInvertNames + 4), 0);
+		preset.optionChoice("shoulder_aim_crosshair_color", "Shooter aim crosshair color",
+		                    std::vector<const char*>(aim::kCrossNames, aim::kCrossNames + aim::kCrossCount), 8);
 		preset.optionBool("rocket_key_launch", "Bazooka rocket jump key shots launch enemies up", true);
 		preset.optionBool("rocket_air_pop", "Bazooka shots defeat enemies in the air at once", true);
 		preset.optionNumber("rocket_key_launch_height", "Bazooka rocket jump key launch height (percent)", 80, 10, 300, 10);
@@ -1078,6 +1082,7 @@ struct FluddWeapons : sms::Mod {
 			const bool fireNow = canFire();
 			const float dt = t.dt * 30.0f; // 30ths of a second
 			eng.time += t.dt;
+			shoulder.steer(eng.time);
 			magnet.tick(eng.time, t.dt, [this](int pl, shots::V* at) -> bool {
 				For f(*this, pl);
 				SmsPlayer m = SmsPlayer();
@@ -1130,12 +1135,16 @@ struct FluddWeapons : sms::Mod {
 		});
 		// a player's FLUDD about to spray while a weapon of this mod's fires: none of its own stream
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int {
+			if (e.player == 0 && players() == 1 && !ownShots()) // the shoulder aim without the weapons: FLUDD's water to the crosshair
+				shoulder.onEmit(e, eng.time);
 			if (!ownShots() || e.player < 0 || e.player >= players())
 				return SMS_CONTINUE;
 			For f(*this, e.player);
 			const int w = weaponNow();
 			if (ownGoop()) // a goop weapon: FLUDD's own stream made goop (none: its water)
 				gp.onEmit(e, isGoop(w) && !shotWeapon(w) ? w : 0);
+			if (!shotWeapon(w) && e.player == 0 && players() == 1)
+				shoulder.onEmit(e, eng.time); // FLUDD's own water (no goop tag): to the crosshair
 			return shotWeapon(w) ? SMS_CANCEL : SMS_CONTINUE;
 		});
 		// a drop landing: goop leaves goop, water washes it (the SMG's shot a good splash, the
@@ -1182,6 +1191,7 @@ struct FluddWeapons : sms::Mod {
 			lastCamera = now;
 			dt = dt > 0.1f ? 0.1f : dt < 0.0f ? 0.0f : dt;
 			const bool can = setting("shoulder_aim", 0) && players() == 1 && !firstPerson() && playing && canFire() && !holding();
+			shoulder.invert = setting("shoulder_aim_invert", 0);
 			shoulder.camera(c, can, setting("shoulder_aim_speed", 100) / 100.0f, dt);
 			eng.aimOn    = shoulder.active;
 			eng.aimPoint = shoulder.point;
@@ -1198,7 +1208,7 @@ struct FluddWeapons : sms::Mod {
 			if (d.mode != SMS_MODE_STAGE)
 				return;
 			drawScope(); // (co-op: each player's in their half)
-			shoulder.drawCrosshair(draw());
+			shoulder.drawCrosshair(draw(), setting("shoulder_aim_crosshair_color", 8));
 			if (core().time() > toastUntil)
 				return;
 			char text[64];
