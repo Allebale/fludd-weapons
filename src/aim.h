@@ -44,6 +44,7 @@ struct Shoulder {
 	V camAt;                // the camera, as placed this frame
 	int invert     = 0;     // kInvertNames
 	float fov      = 0.0f;  // the aim's field of view (degrees; 0 the game's)
+	bool straight  = false; // the Rifle, SMG and Bazooka: his body faces the camera's way, never turned to the point
 	float crossX   = 0.0f;  // the crosshair left (-) or right (+) of the middle, a share of half the picture
 	V ray;                  // the crosshair's line out of the camera
 
@@ -263,7 +264,8 @@ struct Shoulder {
 		// comes down short of it, as FLUDD's water does
 		const float dist = tf;
 		const float lift = dist < 250.0f ? 0.0f : (dist - 250.0f) * 0.006f; // degrees
-		const float ay   = atan2f(to.x, to.z) / kDeg;
+		// (the shot weapons: straight ahead, the camera's way; their shots go to the crosshair on their own)
+		const float ay   = straight ? yaw : atan2f(to.x, to.z) / kDeg;
 		const float ap   = atan2f(to.y, tf) / kDeg + (lift > 9.0f ? 9.0f : lift);
 		if (SHOTS_HAS(api->player, SmsPlayerApi, set_aim)) {
 			api->player->set_aim(1, ay, ap);

@@ -1190,6 +1190,7 @@ struct FluddWeapons : sms::Mod {
 			const bool can = setting("shoulder_aim", 0) && players() == 1 && !firstPerson() && playing && canFire() && !holding();
 			shoulder.invert = setting("shoulder_aim_invert", 0);
 			shoulder.fov    = (float)setting("shoulder_aim_fov", 55);
+			shoulder.straight = shotWeapon(chosen());
 			shoulder.crossX = setting("shoulder_aim_crosshair_x", 0) / 100.0f;
 			shoulder.camera(c, can, setting("shoulder_aim_speed", 100) / 100.0f, dt);
 			eng.aimOn    = shoulder.active;
