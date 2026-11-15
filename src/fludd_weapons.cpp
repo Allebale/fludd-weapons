@@ -868,7 +868,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
 		preset.optionNumber("rocket_jump_power_third", "Bazooka rocket jump height in third person (percent)", 150, 10, 300, 10);
-		preset.optionBool("rifle_coin_magnet", "Enemies defeated with the Rifle's scope send their coins to you", false);
+		preset.optionBool("rifle_coin_magnet", "Enemies defeated with the Rifle's scope send their coins to you", true);
 		preset.optionBool("rocket_key_launch", "Bazooka rocket jump key shots launch enemies up", true);
 		preset.optionBool("rocket_air_pop", "Bazooka shots defeat enemies in the air at once", true);
 		preset.optionNumber("rocket_key_launch_height", "Bazooka rocket jump key launch height (percent)", 80, 10, 300, 10);
@@ -958,7 +958,7 @@ struct FluddWeapons : sms::Mod {
 		eng.defeatCtx = this;
 		eng.onDefeat  = [](void* ctx, int pl, int weapon, const shots::V& at) {
 			FluddWeapons* self = static_cast<FluddWeapons*>(ctx);
-			if (weapon == shots::RIFLE && self->setting("rifle_coin_magnet", 0))
+			if (weapon == shots::RIFLE && self->setting("rifle_coin_magnet", 1))
 				self->magnet.defeated(pl, at, self->ps[pl & 1].zoomed, self->eng.time);
 		};
 		eng.washCtx  = &gp;
