@@ -66,15 +66,66 @@ struct Shoulder {
 
 	// The controller as read this frame (before the game): the aim's button, and while aiming the
 	// stick turned to the aim's way, L and the C-stick kept, R short of its click.
+	// The game's own camera turned with the aim, by its C-stick (the mod has no other way to turn
+	// it): while aiming and a little after, so letting go of the aim leaves the game's camera
+	// looking where the aim looked, and the stick walks him that way. Which way the C-stick turns
+	// it (the player's camera inverting) is learnt from how it answers.
+	int turnUntilFrames = 0; // frames left to turn it after the aim ends
+	float turnSign      = 1.0f;
+	float lastCmd       = 0.0f;
+	float lastGameYaw   = 0.0f;
+	int wrongWay        = 0;
+	static float wrap(float a)
+	{
+		while (a > 180.0f)
+			a -= 360.0f;
+		while (a < -180.0f)
+			a += 360.0f;
+		return a;
+	}
+	void turnGameCamera(SmsPadStatus& s)
+	{
+		const float err = wrap(yaw - gameYaw);
+		// learn the sign: the game's camera moving away from the aim while we push it
+		const float moved = wrap(gameYaw - lastGameYaw);
+		if (fabsf(lastCmd) > 0.3f && fabsf(moved) > 0.2f) {
+			const float wanted = lastCmd * turnSign; // the way we meant it to go
+			if ((moved > 0.0f) != (wanted > 0.0f)) {
+				if (++wrongWay >= 4) {
+					turnSign = -turnSign;
+					wrongWay = 0;
+				}
+			} else
+				wrongWay = 0;
+		}
+		lastGameYaw = gameYaw;
+		float cmd = fabsf(err) < 2.0f ? 0.0f : err / 25.0f;
+		cmd = cmd > 1.0f ? 1.0f : cmd < -1.0f ? -1.0f : cmd;
+		lastCmd = cmd;
+		s.cstick_x = (int8_t)lrintf(cmd * turnSign * 80.0f);
+	}
+
 	void padRead(SmsPadStatus& s, bool keyHeld)
 	{
 		held = keyHeld || (s.buttons & SMS_PAD_L) || s.trigger_l >= 100;
-		if (!active)
+		if (!active) {
+			// after the aim: on turning the game's camera until it looks the aim's way (not while
+			// the player turns it himself)
+			if (turnUntilFrames > 0) {
+				turnUntilFrames--;
+				if (abs(s.cstick_x) > 20 || fabsf(wrap(yaw - gameYaw)) < 2.0f)
+					turnUntilFrames = 0;
+				else
+					turnGameCamera(s);
+			}
 			return;
+		}
 		s.buttons &= (uint16_t)~SMS_PAD_L;
 		s.trigger_l = 0;
 		cx = s.cstick_x / 80.0f, cy = s.cstick_y / 80.0f;
 		s.cstick_x = s.cstick_y = 0;
+		turnGameCamera(s);
+		turnUntilFrames = 240;
 		// the stick: up walks where the aim points (the game reads it against its own camera)
 		const float sx = s.stick_x, sy = s.stick_y;
 		const V fa = forward(yaw, 0), ra = right(yaw), fg = forward(gameYaw, 0), rg = right(gameYaw);
