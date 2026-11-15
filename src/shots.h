@@ -1757,6 +1757,9 @@ struct Engine {
 		if (h->hits >= k.toDefeat) {
 			h->hits = 0;
 			api->core->log(mod, SMS_LOG_INFO, "an enemy defeated by the %s", kNames[weapon]);
+			SmsVec3 at;
+			if (onDefeat && api->game->object_position(e, &at))
+				onDefeat(defeatCtx, player, weapon, V(at));
 			api->actor->defeat(e);
 			if (weapon == BAZOOKA && s.hearts && s.inView)
 				dropHeart(e);
@@ -1816,6 +1819,9 @@ struct Engine {
 	// told of each Rifle shot: who fired, from where, which way and how far it goes (the Coin Magnet)
 	void* rifleCtx = 0;
 	void (*rifleShot)(void* ctx, int player, const V& from, const V& way, float len) = 0;
+	// told of each enemy a weapon's shots defeat, where it was (the Coin Magnet)
+	void* defeatCtx = 0;
+	void (*onDefeat)(void* ctx, int player, int weapon, const V& at) = 0;
 
 	// a mod's own goop washed by a burst (the goop weapons', goop.h): its own puddles too
 	void* washCtx = 0;

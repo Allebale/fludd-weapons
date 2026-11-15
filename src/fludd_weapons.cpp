@@ -949,14 +949,17 @@ struct FluddWeapons : sms::Mod {
 		eng.rifleCtx = this;
 		eng.rifleShot = [](void* ctx, int pl, const shots::V& from, const shots::V& way, float len) {
 			FluddWeapons* self = static_cast<FluddWeapons*>(ctx);
-			if (self->setting("rifle_coin_magnet", 0) && self->ps[pl & 1].zoomed)  // through the scope
-				self->magnet.scopedShot(pl & 1, from, way, len, self->eng.time);
+			(void)from, (void)way, (void)len;
+			if (self->ps[pl & 1].zoomed)  // through the scope
+				self->magnet.scopedShot(pl & 1, self->eng.time);
 		};
-		on<SmsEvActor>(SMS_EV_ACTOR_DEATH, [this](SmsEvActor& e) {
-			if (!e.forced && setting("rifle_coin_magnet", 0))
-				magnet.defeated(shots::V(e.position), eng.time);
-		});
-		on<SmsEvItemSetup>(SMS_EV_ITEM_SETUP, [this](SmsEvItemSetup& e) { magnet.itemSetup(e); });
+		magnet.mod    = handle();
+		eng.defeatCtx = this;
+		eng.onDefeat  = [](void* ctx, int pl, int weapon, const shots::V& at) {
+			FluddWeapons* self = static_cast<FluddWeapons*>(ctx);
+			if (weapon == shots::RIFLE && self->setting("rifle_coin_magnet", 0))
+				self->magnet.defeated(pl, at, self->ps[pl & 1].zoomed, self->eng.time);
+		};
 		eng.washCtx  = &gp;
 		eng.washGoop = [](void* g, float x, float y, float z, float r) { static_cast<goop::Goop*>(g)->washBurst(x, y, z, r); };
 		if (ownShots())
