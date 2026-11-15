@@ -44,6 +44,8 @@ struct Shoulder {
 	V camAt;                // the camera, as placed this frame
 	int invert     = 0;     // kInvertNames
 	float fov      = 0.0f;  // the aim's field of view (degrees; 0 the game's)
+	float crossX   = 0.0f;  // the crosshair left (-) or right (+) of the middle, a share of half the picture
+	V ray;                  // the crosshair's line out of the camera
 
 	static V forward(float yawDeg, float pitchDeg)
 	{
@@ -247,11 +249,14 @@ struct Shoulder {
 			return;
 		}
 		// the crosshair's point, and Mario turned to it: FLUDD's nozzle (about his shoulders) to it
-		pointOk = trace(cam, f, &point);
+		// the crosshair's line: through its place on the picture (moved left or right by the setting)
+		const float halfW = tanf(c.fovy * 0.5f * kDeg) * (c.aspect > 0.1f ? c.aspect : 16.0f / 9.0f);
+		ray     = (f + r * (crossX * halfW)).unit();
+		pointOk = trace(cam, ray, &point);
 		const V from = m + V(0, 110.0f, 0);
 		V to = point - from;
 		if (to.len() < 200.0f) // too near (a wall in his face): the aim's way
-			to = f;
+			to = ray;
 		const float tf = sqrtf(to.x * to.x + to.z * to.z);
 		// Straight at the crosshair's point from his nozzle, a little higher the further it is, as
 		// water drops on the way: up to the stream's reach it lands on the crosshair; further, it
@@ -283,7 +288,7 @@ struct Shoulder {
 			return;
 		float w = 0, h = 0;
 		d.canvas(&w, &h);
-		const float x = w * 0.5f, y = h * 0.5f, r = h * 0.009f;
+		const float x = w * 0.5f * (1.0f + crossX), y = h * 0.5f, r = h * 0.009f;
 		const SmsColor c    = kCrossColors[ci >= 0 && ci < kCrossCount ? ci : 0];
 		const SmsColor edge = ci == kCrossCount - 1 ? SMS_RGBA(255, 255, 255, 120) : SMS_RGBA(0, 0, 0, 110);
 		d.circle_outline(x, y, r, r * 0.55f, edge);

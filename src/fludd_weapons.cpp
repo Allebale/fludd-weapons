@@ -878,6 +878,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("shoulder_aim_fov", "Shooter aim field of view (degrees)", 55, 30, 100, 1);
 		preset.optionChoice("shoulder_aim_invert", "Shooter aim inverted",
 		                    std::vector<const char*>(aim::kInvertNames, aim::kInvertNames + 4), 0);
+		preset.optionNumber("shoulder_aim_crosshair_x", "Shooter aim crosshair left or right (percent, right is more)", 0, -50, 50, 1);
 		preset.optionChoice("shoulder_aim_crosshair_color", "Shooter aim crosshair color",
 		                    std::vector<const char*>(aim::kCrossNames, aim::kCrossNames + aim::kCrossCount), 8);
 		preset.optionBool("rocket_key_launch", "Bazooka rocket jump key shots launch enemies up", true);
@@ -1189,10 +1190,11 @@ struct FluddWeapons : sms::Mod {
 			const bool can = setting("shoulder_aim", 0) && players() == 1 && !firstPerson() && playing && canFire() && !holding();
 			shoulder.invert = setting("shoulder_aim_invert", 0);
 			shoulder.fov    = (float)setting("shoulder_aim_fov", 55);
+			shoulder.crossX = setting("shoulder_aim_crosshair_x", 0) / 100.0f;
 			shoulder.camera(c, can, setting("shoulder_aim_speed", 100) / 100.0f, dt);
 			eng.aimOn    = shoulder.active;
 			eng.aimPoint = shoulder.point;
-			eng.aimWay   = aim::Shoulder::forward(shoulder.yaw, shoulder.pitch);
+			eng.aimWay   = shoulder.ray;
 		});
 
 		// each view as the game draws it, before its HUD: that player's scope there (under the HUD)
