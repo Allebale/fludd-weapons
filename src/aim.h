@@ -273,6 +273,14 @@ struct Shoulder {
 		if (pl.status == 0x444u || pl.status == 0x4000445u || pl.status == 0x887u || pl.status == 0x4000473u)
 			ay += 180.0f;
 		const float ap   = atan2f(to.y, tf) / kDeg + (lift > 9.0f ? 9.0f : lift);
+		// diving (in the air, sliding on his belly, slipping out of it: MARIO_STATUS_FLAG_UNK800000's moves,
+		// and the dive into water): his own way, nothing turned
+		if ((pl.status & 0x800000u) || pl.status == 0x891u) {
+			if (aimSet && SHOTS_HAS(api->player, SmsPlayerApi, set_aim))
+				api->player->set_aim(0, 0.0f, 0.0f);
+			aimSet = false;
+			return;
+		}
 		if (SHOTS_HAS(api->player, SmsPlayerApi, set_aim)) {
 			api->player->set_aim(1, ay, ap);
 			aimSet = true;
