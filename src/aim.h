@@ -265,7 +265,13 @@ struct Shoulder {
 		const float dist = tf;
 		const float lift = dist < 250.0f ? 0.0f : (dist - 250.0f) * 0.006f; // degrees
 		// (the shot weapons: straight ahead, the camera's way; their shots go to the crosshair on their own)
-		const float ay   = straight ? yaw : atan2f(to.x, to.z) / kDeg;
+		float ay         = straight ? yaw : atan2f(to.x, to.z) / kDeg;
+		// The game's turn-around moves (the end of a skid turn, a brake, a U-turn jump and its slide) are
+		// animated facing back, and the game turns his body round for them (mModelFaceAngle + 0x8000);
+		// set_aim's turn takes the place of the game's, so it is turned round the same way, or he faces
+		// the camera walking backwards
+		if (pl.status == 0x444u || pl.status == 0x4000445u || pl.status == 0x887u || pl.status == 0x4000473u)
+			ay += 180.0f;
 		const float ap   = atan2f(to.y, tf) / kDeg + (lift > 9.0f ? 9.0f : lift);
 		if (SHOTS_HAS(api->player, SmsPlayerApi, set_aim)) {
 			api->player->set_aim(1, ay, ap);
