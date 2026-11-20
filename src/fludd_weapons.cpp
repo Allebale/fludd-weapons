@@ -77,8 +77,29 @@ bool hasPlayers(const SmsHeldFluddApi* h)
 
 } // namespace
 
+// A service for other mods (api->core->require("fludd-weapons.goop", 1)): black goop as ice. The Christmas
+// Additions mod asks for it; any mod may. Version 1.
+struct FluddWeaponsGoop {
+	uint32_t size;
+	void (*set_ice)(int on); // 1: black goop is ice (white-blue, slippery, freezes enemies); 0: black goop again
+	int (*ice)(void);        // 1 while it is ice
+};
+static goop::Goop* s_goop = nullptr;
+static int s_iceAsked     = 0;
+static void goopSetIce(int on)
+{
+	s_iceAsked = on ? 1 : 0;
+	if (s_goop)
+		s_goop->set.ice = s_iceAsked != 0;
+}
+static int goopIce(void) { return s_goop && s_goop->set.ice ? 1 : 0; }
+static const FluddWeaponsGoop s_goopService = {sizeof(FluddWeaponsGoop), goopSetIce, goopIce};
+
 struct FluddWeapons : sms::Mod {
 	using sms::Mod::Mod;
+	~FluddWeapons() { s_goop = nullptr; }
+	// a weapon's name, black goop's as ice when it is
+	const char* weaponName(int w) const { return w == 6 && gp.set.ice ? "Ice goop" : kWeaponNames[w]; }
 
 	RecommendedPreset preset{*this}; // the "Settings preset" row: Recommended (the defaults) or Custom
 	shots::Engine eng; // the shots, hits and bursts (the mod API's water drops and actors)
@@ -264,8 +285,8 @@ struct FluddWeapons : sms::Mod {
 			}
 		if (pl.zoomed && !pl.zoomFromThird)
 			pl.zoomed = false;
-		toast(kWeaponNames[weapon]);
-		info("%sweapon: %s", cur ? "player 2's " : "", kWeaponNames[weapon]);
+		toast(weaponName(weapon));
+		info("%sweapon: %s", cur ? "player 2's " : "", weaponName(weapon));
 	}
 
 	// D-pad up: the Rifle's zoom on and off in first person (FLUDD in view); in third person with
@@ -780,6 +801,9 @@ struct FluddWeapons : sms::Mod {
 		eng.mod = handle();
 		gp.api  = &api();
 		gp.mod  = handle();
+		s_goop  = &gp;
+		gp.set.ice = s_iceAsked != 0;
+		api().core->provide(handle(), "fludd-weapons.goop", 1, &s_goopService);
 		eng.muzzleCtx = this;
 		eng.muzzle    = [](void* ctx, int pl, float* out) -> bool {
 			FluddWeapons* self = static_cast<FluddWeapons*>(ctx);

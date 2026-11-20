@@ -55,6 +55,8 @@ struct Settings {
 	bool npcs        = true;    // friendly characters shocked and burnt (never defeated)
 	bool defeat      = true;    // enemies defeated by it
 	int quality      = 2;       // its look: 0 very low (simplest puddles, fewest flames) to 4 very high
+	bool ice         = false;   // black goop is ice instead: white-blue, slippery as ever, and it freezes enemies
+	                            // (another mod asks for it: the "fludd-weapons.goop" service's set_ice)
 	const Stats& of(int kind) const { return kinds[kind == kElectric ? 1 : kind == kBlack ? 2 : 0]; }
 };
 
@@ -125,6 +127,7 @@ struct Goop {
 		bool resting = false;
 		float until = 0;
 		bool npc = false;
+		bool frozen = false; // tinted ice blue (ice), to be given its own colour back
 	};
 	static const int kZaps = 24;
 	Zap zaps[kZaps];
@@ -519,7 +522,7 @@ struct Goop {
 	// `direct`: hit by the stream itself (a burn or shock counted now); else touched by the goop
 	void burn(SmsObject e, int kind, bool launch = false, bool direct = false)
 	{
-		if (kind == kBlack || !e || gone(e))
+		if ((kind == kBlack && !set.ice) || !e || gone(e))
 			return;
 		const bool npc = isNpc(e);
 		if (npc && !set.npcs)
@@ -562,8 +565,9 @@ struct Goop {
 		const V3 at   = posOf(e);
 		free->bx = at.x, free->by = at.y, free->bz = at.z;
 		const SmsVec3 s = at.s();
-		api->audio->play_sound_at(kind == kFire ? kSoundFire : kSoundElecDown, &s);
-		api->core->log(mod, SMS_LOG_INFO, "%s %s by goop", npc ? "a character" : "an enemy", kind == kFire ? "set burning" : "shocked");
+		api->audio->play_sound_at(kind == kFire ? kSoundFire : kind == kBlack ? kSoundWallHard : kSoundElecDown, &s);
+		api->core->log(mod, SMS_LOG_INFO, "%s %s by goop", npc ? "a character" : "an enemy",
+		               kind == kFire ? "set burning" : kind == kBlack ? "frozen" : "shocked");
 	}
 
 	// each tick: the shocked held trembling with sparks, the burning in flames; defeated at the end
@@ -577,8 +581,10 @@ struct Goop {
 				z.e = 0;
 				continue;
 			}
-			if (z.resting)
+			if (z.resting) {
+				thaw(z);
 				continue;
+			}
 			const Stats& st = set.of(z.kind);
 			if (time - z.start >= st.defeat && z.npc) {
 				z.resting = true; // a character: let go, never defeated
@@ -592,10 +598,21 @@ struct Goop {
 				continue;
 			}
 			if (time - z.start >= st.defeat) {
+				thaw(z);
 				api->actor->effect(z.e, SMS_EFFECT_SMOKE);
 				if (isSmall(z.e))
 					api->actor->defeat(z.e); // its own defeat, coins and all
 				z.e = 0;
+				continue;
+			}
+			if (z.kind == kBlack) { // ice: frozen still where it was hit, gone pale blue
+				place(z.e, z.bx, z.by, z.bz);
+				const SmsVec3 still = V3().s();
+				api->actor->set_velocity(z.e, &still);
+				if (!z.frozen && GOOP_HAS(api->game, SmsGameApi, object_set_tint)) {
+					api->game->object_set_tint(z.e, 0xBFE6FFC8u);
+					z.frozen = true;
+				}
 				continue;
 			}
 			if (z.kind == kElectric) { // held where it was shocked, trembling
@@ -606,6 +623,16 @@ struct Goop {
 			}
 			api->actor->effect(z.e, z.kind == kElectric ? SMS_EFFECT_SHOCKED : SMS_EFFECT_BURNING);
 		}
+	}
+
+	// a frozen one's own colour back
+	void thaw(Zap& z)
+	{
+		if (!z.frozen)
+			return;
+		if (z.e && !gone(z.e) && GOOP_HAS(api->game, SmsGameApi, object_set_tint))
+			api->game->object_set_tint(z.e, 0);
+		z.frozen = false;
 	}
 
 	// a Phantamanta hit by fire goop: three hits of water's (half a second till the next)
@@ -737,7 +764,7 @@ struct Goop {
 			const V3 at = posOf(e);
 			for (int k = 0; k < kPuddles; k++) {
 				const Puddle& p = puddles[k];
-				if (!p.on || p.kind == kBlack)
+				if (!p.on || (p.kind == kBlack && !set.ice))
 					continue;
 				const float r = sizeNow(p) + 20.0f, dx = at.x - p.x, dz = at.z - p.z;
 				if (dx * dx + dz * dz <= r * r && fabsf(at.y - p.y) < 60.0f) {
@@ -1135,7 +1162,7 @@ struct Goop {
 	// ---------------------------------------------------------------- pictures
 
 	static const int kTex = 128;
-	SmsTexture texFire = 0, texElectric = 0, texBlack = 0;
+	SmsTexture texFire = 0, texElectric = 0, texBlack = 0, texIce = 0;
 	bool madeTextures  = false;
 	const float kTile  = 300.0f; // world units a picture covers
 
@@ -1265,6 +1292,28 @@ struct Goop {
 		store(out, rgb);
 	}
 
+	// ice (black goop as ice): white with a cold blue under it, frost feathers and fine cracks, a glint
+	static void makeIce(std::vector<uint8_t>& out)
+	{
+		std::vector<float> rgb((size_t)kTex * kTex * 3);
+		for (int y = 0; y < kTex; y++)
+			for (int x = 0; x < kTex; x++) {
+				const float u = (float)x / kTex, v = (float)y / kTex;
+				const float qx = fbmp(u, v, 41u, 2, 3), qy = fbmp(u + 0.37f, v + 0.11f, 42u, 2, 3);
+				const float deep  = fbmp(u + 0.8f * qx, v + 0.8f * qy, 43u, 2, 4);      // blue showing through
+				const float frost = smooth(0.52f, 0.78f, fbmp(u * 2.0f + qx, v * 2.0f + qy, 44u, 2, 4));
+				const float crack = smooth(0.965f, 0.99f, 0.5f + 0.5f * sinf(fbmp(u + qx, v + qy, 45u, 2, 3) * 40.0f));
+				const float glint = smooth(0.80f, 0.92f, fbmp(u + 0.5f, v + 0.2f, 46u, 2, 2));
+				const float br = 150.0f + 40.0f * deep, bg = 200.0f + 25.0f * deep, bb = 238.0f + 12.0f * deep;
+				float r = br + (242.0f - br) * frost, g = bg + (248.0f - bg) * frost, b = bb + (255.0f - bb) * frost;
+				r += (255.0f - r) * crack * 0.9f, g += (255.0f - g) * crack * 0.9f, b += (255.0f - b) * crack * 0.9f;
+				r += 25.0f * glint, g += 25.0f * glint, b += 20.0f * glint;
+				const int i = y * kTex + x;
+				rgb[i * 3] = r, rgb[i * 3 + 1] = g, rgb[i * 3 + 2] = b;
+			}
+		store(out, rgb);
+	}
+
 	bool hasPictures() const { return GOOP_HAS(api->models, SmsModelApi, draw_textured); }
 	void makeTextures()
 	{
@@ -1278,16 +1327,25 @@ struct Goop {
 		texBlack = api->models->texture_create(mod, px.data(), kTex, kTex);
 		makeFire(px);
 		texFire = api->models->texture_create(mod, px.data(), kTex, kTex);
+		makeIce(px);
+		texIce = api->models->texture_create(mod, px.data(), kTex, kTex);
 	}
-	SmsTexture texOf(int kind) const { return kind == kFire ? texFire : kind == kBlack ? texBlack : texElectric; }
+	SmsTexture texOf(int kind) const { return kind == kFire ? texFire : kind == kBlack ? (set.ice ? texIce : texBlack) : texElectric; }
 
 	// each player's FLUDD in their goop weapon's look (its own again otherwise)
 	int dressed[2] = {0, 0};
+	bool dressedIce = false;
 	void dressTick()
 	{
 		const SmsHeldFluddApi* h = hf();
 		if (!GOOP_HAS(h, SmsHeldFluddApi, dress))
 			return;
+		if (dressedIce != set.ice) { // black goop's look changed: dressed again
+			dressedIce = set.ice;
+			for (int p = 0; p < 2; p++)
+				if (dressed[p] == kBlack)
+					dressed[p] = -1;
+		}
 		for (int p = 0; p < 2; p++) {
 			const int k = p < playerCount() ? players[p].kind : 0;
 			if (k == dressed[p])

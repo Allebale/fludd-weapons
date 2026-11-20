@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0 (pre-release)
+
+- **Ice goop:** black goop can turn to ice when another mod asks for it (the Christmas Additions mod
+  does): white-blue ice instead of black, just as slippery and fast, and enemies it touches freeze
+  solid where they stand, pale blue, before they are defeated. Mods ask through the
+  `fludd-weapons.goop` service (`set_ice`).
+
 ## 1.3.0 (pre-release)
 
 Needs the launcher's Beta build of the game (Mod API 1.8 beta 2 or newer). On the stable game, use 1.0.3.
