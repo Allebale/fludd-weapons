@@ -1,6 +1,8 @@
 # Changelog
 
-## 1.4.0 (pre-release)
+## 1.4.0
+
+- **Stable game:** built with the final mod SDK 1.8.0, for the stable game (launcher Stable 1.2.0 and newer). No more pre-release, and no rebuild warning.
 
 - **Ice goop:** black goop can turn to ice when another mod asks for it (the Christmas Additions mod
   does): white-blue ice instead of black, just as slippery and fast, and enemies it touches freeze
