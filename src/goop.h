@@ -1447,6 +1447,35 @@ struct Goop {
 			api->models->draw_textured(buf.data(), (int)buf.size(), t, blend);
 		buf.clear();
 	}
+	// a block of ice round a frozen enemy: as wide as it is hit and a little more, as tall, turned a little,
+	// its top leaning; frosty white at the top edges, clear blue lower down
+	void iceBlock(const Zap& z, int index)
+	{
+		float rad = 0, tall = 0;
+		if (!api->actor->hit_size(z.e, &rad, &tall))
+			return;
+		rad  = (rad > 10.0f ? rad : 40.0f) * 1.3f;
+		tall = (tall > 10.0f ? tall : 80.0f) * 1.2f + 10.0f;
+		const float yaw = hash01((uint32_t)index * 2654435761u + 7u) * 1.57f;
+		const float c = cosf(yaw), sn = sinf(yaw);
+		const float lean = (hash01((uint32_t)index + 99u) - 0.5f) * 0.25f * rad;
+		V3 p[8];
+		for (int k = 0; k < 8; k++) {
+			const float x = (k & 1) ? rad : -rad, zz = (k & 2) ? rad : -rad, top = (k & 4) ? 1.0f : 0.0f;
+			const float sx = x * (top ? 0.9f : 1.0f) + lean * top, sz = zz * (top ? 0.9f : 1.0f);
+			p[k] = V3(z.bx + sx * c - sz * sn, z.by - 5.0f + tall * top, z.bz + sx * sn + sz * c);
+		}
+		static const int faces[6][4] = {{0, 1, 5, 4}, {1, 3, 7, 5}, {3, 2, 6, 7}, {2, 0, 4, 6}, {4, 5, 7, 6}, {0, 2, 3, 1}};
+		for (int f = 0; f < 6; f++) {
+			const int* q = faces[f];
+			const int tri[6] = {q[0], q[1], q[2], q[0], q[2], q[3]};
+			for (int k = 0; k < 6; k++) {
+				const V3& v = p[tri[k]];
+				const bool up = (tri[k] & 4) != 0;
+				ac(v.x, v.y, v.z, up ? 235 : 170, up ? 248 : 220, 255, f == 4 ? 150 : (up ? 125 : 95));
+			}
+		}
+	}
 	float flow(int kind) const { return (float)frame / 60.0f * (kind == kFire ? 10.0f : 5.0f); }
 
 	struct Drop {
@@ -1869,7 +1898,10 @@ struct Goop {
 	{
 		const bool anyStream = players[0].kind || players[1].kind;
 		const bool fire      = grassFire();
-		if (!anyGoop() && !anyStream && drops.empty() && !fire)
+		bool anyFrozen = false;
+		for (int i = 0; i < kZaps; i++)
+			anyFrozen = anyFrozen || (zaps[i].e && zaps[i].frozen);
+		if (!anyGoop() && !anyStream && drops.empty() && !fire && !anyFrozen)
 			return;
 		if (!hasPictures())
 			return;
@@ -1890,6 +1922,12 @@ struct Goop {
 			drawStream(kind);
 			flush(texOf(kind), SMS_BLEND_SOLID);
 		}
+		// ice goop: each frozen enemy in a block of clear ice (its animation still shows faintly through: the mod
+		// API has nothing to stop one's animation)
+		for (int i = 0; i < kZaps; i++)
+			if (zaps[i].e && zaps[i].frozen)
+				iceBlock(zaps[i], i);
+		flush(0, SMS_BLEND_ALPHA);
 		// the flames last: soft, added to what is behind
 		for (int i = 0; i < kPuddles; i++)
 			if (puddles[i].on && puddles[i].kind == kFire)
