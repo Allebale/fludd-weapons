@@ -601,9 +601,9 @@ struct FluddWeapons : sms::Mod {
 		gp.set.defeat     = setting("weapons_defeat", 1) != 0;
 		gp.set.quality    = setting("goop_quality", 2);
 		// ice: chosen here, or asked for by another mod (the Christmas Additions mod, through the service)
-		gp.set.ice        = setting("black_goop_kind", 0) == 1 || s_iceAsked != 0;
-		gp.set.grassPress = setting("goop_grass_press", 1) != 0;
-		gp.set.grassBurn  = setting("goop_grass_burn", 1) != 0;
+		gp.set.ice        = setting("black_goop_kind", 1) == 1 || s_iceAsked != 0;
+		gp.set.grassPress = setting("goop_grass_press", 0) != 0;
+		gp.set.grassBurn  = setting("goop_grass_burn", 0) != 0;
 	}
 
 	// long range: how many times further than the game's own enemies are seen and move
@@ -640,7 +640,7 @@ struct FluddWeapons : sms::Mod {
 	// bazooka on his back turned down behind him
 	bool thirdRocketDown() const
 	{
-		return setting("rocket_jump_third", 0) && setting("rocket_jump", 2) != 0 && rocketKeyHeld();
+		return setting("rocket_jump_third", 1) && setting("rocket_jump", 2) != 0 && rocketKeyHeld();
 	}
 
 	bool rocketJumpOn() const
@@ -696,7 +696,7 @@ struct FluddWeapons : sms::Mod {
 			s.lift     = (float)setting("bazooka_lift", 40) / 100.0f;
 			s.selfJump    = jump ? (float)setting(down ? "rocket_jump_power_third" : "rocket_jump_power", down ? 150 : 130) / 100.0f : 0.0f;
 			s.feetForward = (float)setting(down ? "rocket_jump_feet_third" : "rocket_jump_feet", down ? 30 : 50) / 100.0f;
-			s.hurt        = setting("rocket_jump_hurt", 1) != 0;
+			s.hurt        = setting("rocket_jump_hurt", 0) != 0;
 			s.cry         = setting("rocket_jump_ouch", 1) != 0;
 			s.cryVolume   = (float)setting("rocket_jump_cry_volume", 40) / 100.0f;
 			s.keyLaunch   = keyLaunchNow();
@@ -885,10 +885,10 @@ struct FluddWeapons : sms::Mod {
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
 		preset.optionChoice("rocket_jump_pad", "Rocket jump controller button",
 		             std::vector<const char*>(kRocketPads, kRocketPads + kRocketPadCount), 0);
-		preset.optionBool("rocket_jump_third", "Bazooka rocket jumps in third person (hold the rocket jump key)", false);
+		preset.optionBool("rocket_jump_third", "Bazooka rocket jumps in third person (hold the rocket jump key)", true);
 		preset.optionChoice("rocket_jump_key", "Rocket jump key",
 		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 1);
-		preset.optionBool("rocket_jump_hurt", "Rocket jumps cost Mario 1 health", true);
+		preset.optionBool("rocket_jump_hurt", "Rocket jumps cost Mario 1 health", false);
 		preset.optionBool("rocket_jump_enemy_safe", "No rocket jump damage when a key shot hits an enemy", true);
 		preset.optionBool("rocket_jump_ouch", "Mario cries out when a rocket jump hurts", true);
 		preset.optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 40, 1, 100, 1);
@@ -927,12 +927,12 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("goop_characters", "Goop shocks and burns friendly characters (never defeats them)", true);
 		preset.optionBool("goop_walls", "Goop sticks to walls and drips down", true);
 		preset.optionNumber("goop_wall_life", "Goop on walls lasts (seconds)", 15, 5, 300, 5);
-		preset.optionBool("goop_grass_press", "Electric and black goop press the grass down (Remastered builds)", true);
-		preset.optionBool("goop_grass_burn", "Fire goop burns the grass and sets it alight (Remastered builds)", true);
+		preset.optionBool("goop_grass_press", "Electric and black goop press the grass down (Remastered builds)", false);
+		preset.optionBool("goop_grass_burn", "Fire goop burns the grass and sets it alight (Remastered builds)", false);
 		static const char* const kQualities[] = {"Very low", "Low", "Medium", "High", "Very high"};
 		preset.optionChoice("goop_quality", "Goop quality (lower for slower PCs)", std::vector<const char*>(kQualities, kQualities + 5), 2);
 		static const char* const kBlackLooks[] = {"Black goop", "Ice goop"};
-		preset.optionChoice("black_goop_kind", "Black goop or ice goop (ice freezes enemies)", std::vector<const char*>(kBlackLooks, kBlackLooks + 2), 0);
+		preset.optionChoice("black_goop_kind", "Black goop or ice goop (ice freezes enemies)", std::vector<const char*>(kBlackLooks, kBlackLooks + 2), 1);
 		preset.check();
 
 		// the D-pad, once a frame

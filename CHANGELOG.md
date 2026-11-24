@@ -5,7 +5,8 @@
 - **Back in, from the 1.3.1 and 1.3.2 pre-releases** (1.4.0 left them out by mistake): shooter aim in
   third person (hold L: over-the-shoulder camera, crosshair, mouse aim, its settings), Coin Magnet, the
   rocket jump controller button, goop on 3D Grass, and Mario turning and diving properly while aiming.
-- **Ice goop without another mod:** a setting, Black goop or ice goop (Black goop by default).
+- **Ice goop without another mod:** a setting, Black goop or ice goop (Ice goop by default).
+- **New Recommended settings:** ice goop, third-person rocket jumps on, no health cost for rocket jumps, goop leaves 3D Grass alone.
 
 ## 1.4.0
 
