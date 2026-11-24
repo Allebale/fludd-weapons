@@ -19,7 +19,8 @@
 #include "aim.h"
 
 // the weapons (the menu's): the mod's own numbers
-enum { W_NORMAL = 0, W_SHOTGUN = 1, W_RIFLE = 2, W_BAZOOKA = 3, W_SMG = 4, W_FIRE_GOOP = 5, W_ELECTRIC_GOOP = 6, W_BLACK_GOOP = 7 };
+enum { W_NORMAL = 0, W_SHOTGUN = 1, W_RIFLE = 2, W_BAZOOKA = 3, W_SMG = 4, W_FIRE_GOOP = 5, W_ELECTRIC_GOOP = 6, W_BLACK_GOOP = 7,
+       W_ICE_GOOP = 8 }; // ice: this mod's own (the game sprays black goop)
 
 #include <math.h>
 #include <string>
@@ -40,16 +41,16 @@ const SmsHeldFluddApi* heldFluddApi(const SmsApi& api)
 bool has(const SmsHeldFluddApi* h, size_t end) { return h && h->size >= end; }
 #define HELD_HAS(h, field) has(h, offsetof(SmsHeldFluddApi, field) + sizeof(void*))
 
-const char* const kWeaponNames[] = {"FLUDD", "Rifle", "Submachine gun", "Bazooka", "Fire goop", "Electric goop", "Black goop"};
+const char* const kWeaponNames[] = {"FLUDD", "Rifle", "Submachine gun", "Bazooka", "Fire goop", "Electric goop", "Black goop", "Ice goop"};
 const int kWeaponIds[]           = {W_NORMAL, W_RIFLE, W_SMG, W_BAZOOKA, W_FIRE_GOOP,
-                                    W_ELECTRIC_GOOP, W_BLACK_GOOP};
-const int kWeaponCount           = 7;
+                                    W_ELECTRIC_GOOP, W_BLACK_GOOP, W_ICE_GOOP};
+const int kWeaponCount           = 8;
 // the keyboard keys a weapon can be chosen with (the menu's choices after None)
 const char* const kNumberKeys[]   = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
-const int kKeyDefaults[] = {1, 5, 4, 3, 7, 6, 2}; // each weapon's key (the menu's choice: 1..9, 10 for 0)
+const int kKeyDefaults[] = {1, 5, 4, 3, 7, 6, 2, 8}; // each weapon's key (the menu's choice: 1..9, 10 for 0)
 const char* const kKeyChoices[]   = {"None", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
 // the goop weapons: FLUDD's own stream, as fire or electric goop (R left to the game)
-bool isGoop(int w) { return w == W_FIRE_GOOP || w == W_ELECTRIC_GOOP || w == W_BLACK_GOOP; }
+bool isGoop(int w) { return w == W_FIRE_GOOP || w == W_ELECTRIC_GOOP || w == W_BLACK_GOOP || w == W_ICE_GOOP; }
 
 // long range: how much further than the game's own distance enemies and characters are drawn and
 // move (the "long_range" setting)
@@ -107,7 +108,7 @@ struct FluddWeapons : sms::Mod {
 	using sms::Mod::Mod;
 	~FluddWeapons() { s_goop = nullptr; }
 	// a weapon's name, black goop's as ice when it is
-	const char* weaponName(int w) const { return w == 6 && gp.set.ice ? "Ice goop" : kWeaponNames[w]; }
+	const char* weaponName(int w) const { return kWeaponNames[w]; }
 
 	RecommendedPreset preset{*this}; // the "Settings preset" row: Recommended (the defaults) or Custom
 	shots::Engine eng; // the shots, hits and bursts (the mod API's water drops and actors)
@@ -283,7 +284,7 @@ struct FluddWeapons : sms::Mod {
 		if (nozzle == 1)
 			bits = 1u << 3, text = "Bazooka picked up";
 		else if (nozzle == 5)
-			bits = (1u << 4) | (1u << 5) | (1u << 6), text = "Goop weapons picked up";
+			bits = (1u << 4) | (1u << 5) | (1u << 6) | (1u << 7), text = "Goop weapons picked up";
 		else if (nozzle == 4)
 			bits = 1u << 2, text = "Submachine gun picked up";
 		unlockWeapons(bits, text);
@@ -593,6 +594,7 @@ struct FluddWeapons : sms::Mod {
 			st.hits         = setting((key + "_hits").c_str(), kHits[g]);
 			st.water        = (float)setting((key + "_water").c_str(), kWater[g]) / 100.0f;
 		}
+		gp.set.iceSlow    = setting("ice_goop_fast", 1) == 0;
 		gp.set.blackSpeed = (float)setting("black_goop_speed", 500) / 100.0f;
 		gp.set.airTurn    = (float)setting("black_goop_air_turn", 30) / 100.0f;
 		gp.set.wallLife   = (float)setting("goop_wall_life", 15);
@@ -601,7 +603,7 @@ struct FluddWeapons : sms::Mod {
 		gp.set.defeat     = setting("weapons_defeat", 1) != 0;
 		gp.set.quality    = setting("goop_quality", 2);
 		// ice: chosen here, or asked for by another mod (the Christmas Additions mod, through the service)
-		gp.set.ice        = setting("black_goop_kind", 1) == 1 || s_iceAsked != 0;
+		gp.set.ice        = s_iceAsked != 0;
 		gp.set.grassPress = setting("goop_grass_press", 0) != 0;
 		gp.set.grassBurn  = setting("goop_grass_burn", 0) != 0;
 	}
@@ -827,6 +829,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("weapon_on_4", "Fire goop on", true);
 		preset.optionBool("weapon_on_5", "Electric goop on", true);
 		preset.optionBool("weapon_on_6", "Black goop on", true);
+		preset.optionBool("weapon_on_7", "Ice goop on", true);
 		preset.optionChoice("weapon_key_0", "Keyboard key for FLUDD", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 1);
 		preset.optionChoice("weapon_key_1", "Keyboard key for the Rifle", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 5);
 		preset.optionChoice("weapon_key_2", "Keyboard key for the Submachine gun", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 4);
@@ -834,6 +837,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionChoice("weapon_key_4", "Keyboard key for Fire goop", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 7);
 		preset.optionChoice("weapon_key_5", "Keyboard key for Electric goop", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 6);
 		preset.optionChoice("weapon_key_6", "Keyboard key for Black goop", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 2);
+		preset.optionChoice("weapon_key_7", "Keyboard key for Ice goop", std::vector<const char*>(kKeyChoices, kKeyChoices + 11), 8);
 		preset.optionBool("weapons_defeat", "FLUDD weapons can defeat enemies", true);
 		preset.optionBool("third_person_weapons", "FLUDD weapons in third person too", true);
 		preset.optionBool("third_person_models", "Weapon packs in place of FLUDD in third person", true);
@@ -919,6 +923,7 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("electric_goop_water", "Electric goop water use (percent of FLUDD's)", 200, 10, 1000, 10);
 		preset.optionNumber("electric_goop_life", "Electric goop lasts (seconds)", 20, 5, 600, 5);
 		preset.optionNumber("electric_goop_size", "Electric goop puddle size (percent)", 130, 20, 300, 10);
+		preset.optionBool("ice_goop_fast", "Ice goop makes you move fast", true);
 		preset.optionNumber("black_goop_speed", "Black goop speed (percent)", 500, 50, 1000, 10);
 		preset.optionNumber("black_goop_air_turn", "Turning in the air after a black goop jump (percent, 100 at once)", 30, 0, 100, 1);
 		preset.optionNumber("black_goop_water", "Black goop water use (percent of FLUDD's)", 200, 10, 1000, 10);
@@ -931,8 +936,6 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("goop_grass_burn", "Fire goop burns the grass and sets it alight (Remastered builds)", false);
 		static const char* const kQualities[] = {"Very low", "Low", "Medium", "High", "Very high"};
 		preset.optionChoice("goop_quality", "Goop quality (lower for slower PCs)", std::vector<const char*>(kQualities, kQualities + 5), 2);
-		static const char* const kBlackLooks[] = {"Black goop", "Ice goop"};
-		preset.optionChoice("black_goop_kind", "Black goop or ice goop (ice freezes enemies)", std::vector<const char*>(kBlackLooks, kBlackLooks + 2), 1);
 		preset.check();
 
 		// the D-pad, once a frame
@@ -1060,9 +1063,9 @@ struct FluddWeapons : sms::Mod {
 				return;
 			const int coins = api().game->coins ? api().game->coins() : 0;
 			if (coins >= 75) // 75 coins: every weapon
-				unlockWeapons(0x7Eu, "Every weapon picked up");
-			else if (coins >= 20) // 20 coins: the Black goop
-				unlockWeapons(1u << 6, "Black goop picked up");
+				unlockWeapons(0xFEu, "Every weapon picked up");
+			else if (coins >= 20) // 20 coins: the Black and Ice goop
+				unlockWeapons((1u << 6) | (1u << 7), "Black and ice goop picked up");
 			for (int pl = 0; pl < players(); pl++) {
 				For f(*this, pl);
 				SmsPlayer m = SmsPlayer();
@@ -1097,10 +1100,10 @@ struct FluddWeapons : sms::Mod {
 			if (api().player->get(&m) && m.valid && m.in_water)
 				unlockWeapons(1u << 5, "Electric goop picked up");
 		});
-		// Yoshi eats a fruit: the Black goop
+		// Yoshi eats a fruit: the Black and Ice goop
 		on(SMS_EV_YOSHI_EAT, [this](SmsEvent&) {
 			if (setting("weapons_from_nozzles", 1) && playing)
-				unlockWeapons(1u << 6, "Black goop picked up");
+				unlockWeapons((1u << 6) | (1u << 7), "Black and ice goop picked up");
 		});
 		// a 1-Up gives a weapon not had yet
 		on<SmsEvItem>(SMS_EV_ITEM_COLLECTED, [this](SmsEvItem& e) {

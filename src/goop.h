@@ -25,7 +25,9 @@
 namespace goop {
 
 const int kFire = 5, kElectric = 6, kBlack = 7; // SMS_SPRAY_FIRE_GOOP, _ELECTRIC_GOOP, _BLACK_GOOP
-inline bool isKind(int k) { return k == kFire || k == kElectric || k == kBlack; }
+const int kIce = 8;                             // this mod's own: the game sprays it as black goop
+inline bool isKind(int k) { return k == kFire || k == kElectric || k == kBlack || k == kIce; }
+inline bool isSlick(int k) { return k == kBlack || k == kIce; } // both slippery under Mario
 
 // a goop drop's tag: 0x5B, its player and its kind
 const uint32_t kTagMark = 0x5B000000u;
@@ -49,6 +51,7 @@ struct Stats {
 
 struct Settings {
 	Stats kinds[3];             // fire, electric, black
+	bool iceSlow     = false;   // ice goop: no fast gliding on it
 	float blackSpeed = 1;       // black goop's speed, times his own
 	float airTurn    = 0.5f;    // turning in the air after a jump off black goop: 0 none, 1 at once
 	float wallLife   = 30;      // seconds goop lasts on walls
@@ -56,11 +59,11 @@ struct Settings {
 	bool npcs        = true;    // friendly characters shocked and burnt (never defeated)
 	bool defeat      = true;    // enemies defeated by it
 	int quality      = 2;       // its look: 0 very low (simplest puddles, fewest flames) to 4 very high
-	bool ice         = false;   // black goop is ice instead: white-blue, slippery as ever, and it freezes enemies
+	bool ice         = false;   // Christmas Additions asked for ice (the Ice goop weapon is its own now, so nothing changes)
 	                            // (another mod asks for it: the "fludd-weapons.goop" service's set_ice)
 	bool grassPress  = true;    // Remastered builds: electric and black goop press the 3D Grass flat
 	bool grassBurn   = true;    // Remastered builds: fire goop burns it away, the fire running on through it
-	const Stats& of(int kind) const { return kinds[kind == kElectric ? 1 : kind == kBlack ? 2 : 0]; }
+	const Stats& of(int kind) const { return kinds[kind == kElectric ? 1 : isSlick(kind) ? 2 : 0]; }
 };
 
 struct V3 {
@@ -580,7 +583,7 @@ struct Goop {
 	// `direct`: hit by the stream itself (a burn or shock counted now); else touched by the goop
 	void burn(SmsObject e, int kind, bool launch = false, bool direct = false)
 	{
-		if ((kind == kBlack && !set.ice) || !e || gone(e))
+		if (kind == kBlack || !e || gone(e))
 			return;
 		const bool npc = isNpc(e);
 		if (npc && !set.npcs)
@@ -623,9 +626,9 @@ struct Goop {
 		const V3 at   = posOf(e);
 		free->bx = at.x, free->by = at.y, free->bz = at.z;
 		const SmsVec3 s = at.s();
-		api->audio->play_sound_at(kind == kFire ? kSoundFire : kind == kBlack ? kSoundWallHard : kSoundElecDown, &s);
+		api->audio->play_sound_at(kind == kFire ? kSoundFire : kind == kIce ? kSoundWallHard : kSoundElecDown, &s);
 		api->core->log(mod, SMS_LOG_INFO, "%s %s by goop", npc ? "a character" : "an enemy",
-		               kind == kFire ? "set burning" : kind == kBlack ? "frozen" : "shocked");
+		               kind == kFire ? "set burning" : kind == kIce ? "frozen" : "shocked");
 	}
 
 	// each tick: the shocked held trembling with sparks, the burning in flames; defeated at the end
@@ -655,7 +658,7 @@ struct Goop {
 				z.until   = time + 0.6f;
 				continue;
 			}
-			if (z.kind == kBlack && set.ice) { // ice: never defeated by itself; it thaws after a while (break it first)
+			if (z.kind == kIce) { // ice: never defeated by itself; it thaws after a while (break it first)
 				if (time - z.start >= 8.0f) {
 					thaw(z);
 					z.resting = true, z.until = time + 1.0f, z.hits = 0;
@@ -673,7 +676,7 @@ struct Goop {
 				continue;
 			}
 		frozenHold:
-			if (z.kind == kBlack) { // ice: frozen still where it was hit, gone pale blue
+			if (z.kind == kIce) { // ice: frozen still where it was hit, gone pale blue
 				place(z.e, z.bx, z.by, z.bz);
 				const SmsVec3 still = V3().s();
 				api->actor->set_velocity(z.e, &still);
@@ -703,7 +706,7 @@ struct Goop {
 	{
 		for (int i = 0; i < kZaps; i++) {
 			Zap& z = zaps[i];
-			if (z.e != e || !z.frozen || z.kind != kBlack)
+			if (z.e != e || !z.frozen || z.kind != kIce)
 				continue;
 			float rad = 0, tall = 0;
 			api->actor->hit_size(e, &rad, &tall);
@@ -882,6 +885,31 @@ struct Goop {
 		}
 	}
 
+	// ice: an enemy any flying ice drop touches is frozen at once, every tick (the game's hit message
+	// alone missed some, Allebale: "sometimes the goop stream does not freeze them")
+	void iceStreamTouch()
+	{
+		const int n = api->water->count();
+		for (int i = 0; i < n; i++) {
+			SmsWaterDrop d = SmsWaterDrop();
+			d.size         = sizeof d;
+			if (!api->water->get(i, &d) || d.alive <= 0 || kindOfTag(d.tag) != kIce)
+				continue;
+			const V3 dp(d.position);
+			for (int k = 0; k < everyoneCount; k++) {
+				const SmsObject e = everyone[k];
+				if (!e || gone(e) || (!isSmall(e) && !(set.npcs && isNpc(e))))
+					continue;
+				float rad = 0, tall = 0;
+				api->actor->hit_size(e, &rad, &tall);
+				const V3 at = posOf(e);
+				const float r = rad + d.drop_size + 30.0f, dx = dp.x - at.x, dz = dp.z - at.z;
+				if (dx * dx + dz * dz <= r * r && dp.y > at.y - 40.0f && dp.y < at.y + tall + 60.0f)
+					burn(e, kIce);
+			}
+		}
+	}
+
 	// enemies (and characters, and Phantamantas over fire) standing in a puddle
 	void hurtEnemies()
 	{
@@ -912,7 +940,7 @@ struct Goop {
 			}
 			for (int k = 0; k < kPuddles; k++) {
 				const Puddle& p = puddles[k];
-				if (!p.on || (p.kind == kBlack && !set.ice))
+				if (!p.on || p.kind == kBlack)
 					continue;
 				const float r = sizeNow(p) + 20.0f, dx = at.x - p.x, dz = at.z - p.z;
 				if (dx * dx + dz * dz <= r * r && fabsf(at.y - p.y) < 60.0f) {
@@ -925,17 +953,20 @@ struct Goop {
 
 	// ---------------------------------------------------------------- Mario
 
+	mutable int slickUnder = kBlack; // the slippery goop he was last found on
 	bool onBlack(const SmsPlayer& m) const
 	{
 		if (m.on_yoshi || m.in_water || m.position.y > m.floor.y + 12.0f)
 			return false;
 		for (int i = 0; i < kPuddles; i++) {
 			const Puddle& p = puddles[i];
-			if (!p.on || p.kind != kBlack)
+			if (!p.on || !isSlick(p.kind))
 				continue;
 			const float r = sizeNow(p) * 0.9f, dx = m.position.x - p.x, dz = m.position.z - p.z;
-			if (dx * dx + dz * dz <= r * r && fabsf(m.position.y - p.y) < 40.0f)
+			if (dx * dx + dz * dz <= r * r && fabsf(m.position.y - p.y) < 40.0f) {
+				slickUnder = p.kind;
 				return true;
+			}
 		}
 		return false;
 	}
@@ -997,6 +1028,8 @@ struct Goop {
 
 	// black goop under Mario: slippery as ice and fast (his way kept from tick to tick, turning
 	// toward the game's own step times the speed only slowly), carried on after a jump off it
+	// ice goop with fast moving off: still slippery, at his own speed
+	float gearSpeed() const { return slickUnder == kIce && set.iceSlow ? 1.0f : set.blackSpeed; }
 	void blackGoop(Player& g, float dt)
 	{
 		SmsPlayer m;
@@ -1011,8 +1044,8 @@ struct Goop {
 			if (!g.gliding)
 				g.glideX = dx, g.glideZ = dz, g.gliding = true;
 			const float k = 1.0f - powf(0.5f, dt / 0.45f);
-			g.glideX += (dx * set.blackSpeed - g.glideX) * k;
-			g.glideZ += (dz * set.blackSpeed - g.glideZ) * k;
+			g.glideX += (dx * gearSpeed() - g.glideX) * k;
+			g.glideZ += (dz * gearSpeed() - g.glideZ) * k;
 		} else if (sane && g.gliding && !m.in_water) {
 			float speed     = sqrtf(g.glideX * g.glideX + g.glideZ * g.glideZ);
 			const float own = sqrtf(dx * dx + dz * dz);
@@ -1054,7 +1087,7 @@ struct Goop {
 		const bool blinking = hasInvincible(m) && m.invincible;
 		for (int i = 0; i < kWalls && !blinking; i++) {
 			const WallGoop& g = walls[i];
-			if (!g.on || g.kind == kBlack)
+			if (!g.on || isSlick(g.kind))
 				continue;
 			const float dx = m.position.x - g.x, dz = m.position.z - g.z, dy = m.position.y + 80.0f - g.y;
 			const float out = dx * g.nx + dz * g.nz, r = wallSizeNow(g);
@@ -1082,7 +1115,7 @@ struct Goop {
 				continue;
 			}
 			p.inside[who] += dt / 30.0f;
-			if (p.kind == kBlack || blinking)
+			if (isSlick(p.kind) || blinking)
 				continue;
 			if (p.kind == kFire) {
 				fireHurt(m);
@@ -1232,7 +1265,7 @@ struct Goop {
 			burn(e, kind);
 		else if (kind == kFire)
 			burn(e, kind, true, true);
-		else if (kind == kBlack && set.ice)
+		else if (kind == kIce)
 			burn(e, kind); // ice: frozen the moment the stream reaches it, not only on touching the goop
 	}
 
@@ -1323,6 +1356,7 @@ struct Goop {
 			hurtMario(p, dt);
 		}
 		walkToFire(secs);
+		iceStreamTouch();
 		if (time - enemyCheck >= 0.1f) {
 			enemyCheck = time;
 			hurtEnemies();
@@ -1500,22 +1534,15 @@ struct Goop {
 		makeIce(px);
 		texIce = api->models->texture_create(mod, px.data(), kTex, kTex);
 	}
-	SmsTexture texOf(int kind) const { return kind == kFire ? texFire : kind == kBlack ? (set.ice ? texIce : texBlack) : texElectric; }
+	SmsTexture texOf(int kind) const { return kind == kFire ? texFire : kind == kBlack ? texBlack : kind == kIce ? texIce : texElectric; }
 
 	// each player's FLUDD in their goop weapon's look (its own again otherwise)
 	int dressed[2] = {0, 0};
-	bool dressedIce = false;
 	void dressTick()
 	{
 		const SmsHeldFluddApi* h = hf();
 		if (!GOOP_HAS(h, SmsHeldFluddApi, dress))
 			return;
-		if (dressedIce != set.ice) { // black goop's look changed: dressed again
-			dressedIce = set.ice;
-			for (int p = 0; p < 2; p++)
-				if (dressed[p] == kBlack)
-					dressed[p] = -1;
-		}
 		for (int p = 0; p < 2; p++) {
 			const int k = p < playerCount() ? players[p].kind : 0;
 			if (k == dressed[p])
@@ -1995,7 +2022,7 @@ struct Goop {
 		if (e.view == 0)
 			frame++;
 		gatherDrops();
-		for (int kind = kFire; kind <= kBlack; kind++) {
+		for (int kind = kFire; kind <= kIce; kind++) {
 			for (int i = 0; i < kPuddles; i++)
 				if (puddles[i].on && puddles[i].kind == kind)
 					drawPuddle(puddles[i], i);
