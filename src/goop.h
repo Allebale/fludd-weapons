@@ -176,6 +176,7 @@ struct Goop {
 		float until = 0;
 		bool npc = false;
 		bool frozen = false; // tinted ice blue (ice), to be given its own colour back
+		float vy = 0, fallT = 0; // ice: frozen in the air, its body falls to the ground
 	};
 	static const int kZaps = 24;
 	Zap zaps[kZaps];
@@ -585,8 +586,6 @@ struct Goop {
 	{
 		if (kind == kBlack || !e || gone(e))
 			return;
-		if (kind == kIce && inAir(e)) // ice: only what stands on the ground freezes (Allebale)
-			return;
 		const bool npc = isNpc(e);
 		if (npc && !set.npcs)
 			return;
@@ -679,6 +678,7 @@ struct Goop {
 			}
 		frozenHold:
 			if (z.kind == kIce) { // ice: frozen still where it was hit, gone pale blue
+				iceFall(z);
 				place(z.e, z.bx, z.by, z.bz);
 				const SmsVec3 still = V3().s();
 				api->actor->set_velocity(z.e, &still);
@@ -718,8 +718,10 @@ struct Goop {
 			thaw(z);
 			const SmsVec3 s = sh.at.s();
 			api->audio->play_sound_at(kSoundIceBreak, &s);
-			if (isSmall(e))
+			if (isSmall(e)) {
 				api->actor->defeat(e);
+				vanish(e); // only the ice breaking seen, not its own death
+			}
 			z.e = 0;
 			return true;
 		}
@@ -954,6 +956,61 @@ struct Goop {
 	}
 
 	// ---------------------------------------------------------------- Mario
+
+	// a body frozen in the air falls (as the game's gravity), to the floor under it
+	void iceFall(Zap& z)
+	{
+		const float step = z.fallT > 0.0f && time > z.fallT ? time - z.fallT : 0.0f;
+		z.fallT          = time;
+		if (step <= 0.0f || step > 0.25f || !GOOP_HAS(api->game, SmsGameApi, ground))
+			return;
+		const SmsVec3 up = V3(z.bx, z.by + 30.0f, z.bz).s();
+		SmsGround g      = SmsGround();
+		g.size           = sizeof g;
+		if (!api->game->ground(&up, &g) || z.by <= g.floor + 1.0f) {
+			z.vy = 0.0f;
+			return;
+		}
+		z.vy -= 3000.0f * step; // about the game's own fall
+		if (z.vy < -2400.0f)
+			z.vy = -2400.0f;
+		z.by += z.vy * step;
+		if (z.by <= g.floor) {
+			z.by = g.floor, z.vy = 0.0f;
+			const SmsVec3 s = V3(z.bx, z.by, z.bz).s();
+			api->audio->play_sound_at(kSoundWallHard, &s); // a thud of ice on the ground
+		}
+	}
+
+	// enemies broken out of ice: their own death unseen (drawn as nothing while it plays), shown again once alive
+	static const int kVanished = 32;
+	SmsObject vanished[kVanished] = {};
+	bool vanishedDead[kVanished]  = {};
+	void vanish(SmsObject e)
+	{
+		if (!GOOP_HAS(api->actor, SmsActorApi, set_model_scale))
+			return;
+		for (int i = 0; i < kVanished; i++)
+			if (!vanished[i] || vanished[i] == e) {
+				vanished[i] = e, vanishedDead[i] = false;
+				api->actor->set_model_scale(e, 0.001f);
+				return;
+			}
+	}
+	void vanishedTick()
+	{
+		for (int i = 0; i < kVanished; i++) {
+			if (!vanished[i])
+				continue;
+			const bool dead = (api->actor->flags(vanished[i]) & SMS_ACTOR_FLAG_DEAD) != 0;
+			if (dead)
+				vanishedDead[i] = true;
+			else if (vanishedDead[i]) { // back (the game brought it again): seen again
+				api->actor->set_model_scale(vanished[i], 1.0f);
+				vanished[i] = 0;
+			}
+		}
+	}
 
 	// off the ground: thrown up, or more than a little above the floor under it (flying ones too)
 	bool inAir(SmsObject e) const
@@ -1294,6 +1351,8 @@ struct Goop {
 			walls[i] = WallGoop();
 		for (int i = 0; i < kZaps; i++)
 			zaps[i] = Zap();
+		for (int i = 0; i < kVanished; i++)
+			vanished[i] = 0; // a new stage: its actors are new
 		for (int i = 0; i < kFlights; i++)
 			flights[i] = Flight();
 		for (int i = 0; i < kMovers; i++)
@@ -1310,6 +1369,7 @@ struct Goop {
 		const float secs = dt / 30.0f;
 		for (int p = 0; p < 2; p++)
 			players[p].kind = kinds[p], players[p].held = held[p];
+		vanishedTick();
 		flightsTick(secs);
 		zapsTick();
 		dressTick();
