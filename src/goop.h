@@ -1232,6 +1232,8 @@ struct Goop {
 			burn(e, kind);
 		else if (kind == kFire)
 			burn(e, kind, true, true);
+		else if (kind == kBlack && set.ice)
+			burn(e, kind); // ice: frozen the moment the stream reaches it, not only on touching the goop
 	}
 
 	void stageReset()
