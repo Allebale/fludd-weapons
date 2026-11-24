@@ -1679,8 +1679,15 @@ struct Engine {
 
 	// ---------------------------------------------------------------- hits
 
+	// a hook the mod sets: an enemy frozen by ice goop broken by this hit (the Bazooka's or the Rifle's) when it
+	// says so; nothing else happens to it then
+	bool (*breakFrozen)(void* ctx, SmsObject e) = nullptr;
+	void* breakCtx = nullptr;
+
 	void hitEnemy(SmsObject e, int player, int weapon, uint32_t shot, float dx, float dz)
 	{
+		if ((weapon == BAZOOKA || weapon == RIFLE) && breakFrozen && breakFrozen(breakCtx, e))
+			return;
 		Shooter by(*this, player);
 		const uint32_t f = api->actor->flags(e);
 		if (!f || (f & SMS_ACTOR_FLAG_DEAD) || !(f & SMS_ACTOR_FLAG_SMALL_ENEMY))

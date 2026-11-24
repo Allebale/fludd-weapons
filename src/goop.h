@@ -36,6 +36,7 @@ inline int kindOfTag(uint32_t tag) { return (tag & 0xFF000000u) == kTagMark && i
 const uint32_t kStatusJumpBackDown = 0x208B3, kStatusFireDown = 0x208B7, kStatusElectric = 0x20338;
 const uint32_t kSoundWallHard = 0x1803, kSoundElecDamage = 0x1814, kSoundFire = 0x3803, kSoundLightning = 0x3806;
 const uint32_t kSoundElecDown = 0x28ED;
+const uint32_t kSoundIceBreak = 0x3857; // MSD_SE_OBJ_GLASS_BREAK: frozen ice broken
 
 // each kind's numbers (the mod's menu): seconds burning or shocked that defeat an enemy, how long its
 // goop lasts (seconds), its puddles' size (times their own), times it hurts an enemy before it is
@@ -98,6 +99,16 @@ inline const GrassApi* grassOf(const SmsApi* api)
 	return g && g->size >= sizeof(GrassApi) && g->magic == 0x53524747u ? g : 0;
 }
 
+// The game's api->parts table where it has one (Allebale's snowman-enemy game, not Chase's stable one): found by
+// its magic in the pointers after api->models. Only its head and freeze_anim are used here (an actor's
+// animations held still), so the table is declared as far as that, in the SDK fork's layout.
+struct PartsLite {
+	uint32_t size, magic;
+	void* before[15]; // joint .. hide_worn
+	int (*freeze_anim)(SmsObject actor, int frozen);
+};
+const uint32_t kPartsMagic = 0x53545250u; // "PRTS"
+
 struct Goop {
 	const SmsApi* api = 0;
 	SmsMod* mod       = 0;
@@ -141,6 +152,17 @@ struct Goop {
 	WallGoop walls[kWalls];
 
 	// enemies touched by the goop: shocked (held still, trembling, sparks) or burning, then defeated
+	const PartsLite* parts = nullptr; // set by the mod when the game has it
+	bool canFreeze() const { return parts && parts->size >= offsetof(PartsLite, freeze_anim) + sizeof(void*) && parts->freeze_anim; }
+	// ice broken: a burst of pale-blue chunks where a frozen enemy shattered
+	struct Shatter {
+		V3 at;
+		float start = -1, rad = 40, tall = 80;
+	};
+	static const int kShatters = 8;
+	Shatter shatters[kShatters];
+	int nextShatter = 0;
+
 	struct Zap {
 		SmsObject e = 0;
 		int kind = 0;
@@ -633,6 +655,15 @@ struct Goop {
 				z.until   = time + 0.6f;
 				continue;
 			}
+			if (z.kind == kBlack && set.ice) { // ice: never defeated by itself; it thaws after a while (break it first)
+				if (time - z.start >= 8.0f) {
+					thaw(z);
+					z.resting = true, z.until = time + 1.0f, z.hits = 0;
+				}
+				if (time - z.start < 8.0f)
+					goto frozenHold;
+				continue;
+			}
 			if (time - z.start >= st.defeat) {
 				thaw(z);
 				api->actor->effect(z.e, SMS_EFFECT_SMOKE);
@@ -641,6 +672,7 @@ struct Goop {
 				z.e = 0;
 				continue;
 			}
+		frozenHold:
 			if (z.kind == kBlack) { // ice: frozen still where it was hit, gone pale blue
 				place(z.e, z.bx, z.by, z.bz);
 				const SmsVec3 still = V3().s();
@@ -648,7 +680,11 @@ struct Goop {
 				if (!z.frozen && GOOP_HAS(api->game, SmsGameApi, object_set_tint)) {
 					api->game->object_set_tint(z.e, 0xBFE6FFC8u);
 					z.frozen = true;
+					if (canFreeze())
+						parts->freeze_anim(z.e, 1); // still as a picture, not only held in place
 				}
+				if (z.frozen && stompedOn(z))
+					continue;
 				continue;
 			}
 			if (z.kind == kElectric) { // held where it was shocked, trembling
@@ -661,6 +697,76 @@ struct Goop {
 		}
 	}
 
+	// a frozen enemy broken (jumped on, or hit by the Bazooka or Rifle): its ice bursts into chunks and it is
+	// defeated, coins and all. False when it is not one frozen by ice goop.
+	bool shatter(SmsObject e)
+	{
+		for (int i = 0; i < kZaps; i++) {
+			Zap& z = zaps[i];
+			if (z.e != e || !z.frozen || z.kind != kBlack)
+				continue;
+			float rad = 0, tall = 0;
+			api->actor->hit_size(e, &rad, &tall);
+			Shatter& sh = shatters[nextShatter++ % kShatters];
+			sh.at = V3(z.bx, z.by, z.bz), sh.start = time;
+			sh.rad = rad > 10.0f ? rad : 40.0f, sh.tall = tall > 10.0f ? tall : 80.0f;
+			thaw(z);
+			const SmsVec3 s = sh.at.s();
+			api->audio->play_sound_at(kSoundIceBreak, &s);
+			if (isSmall(e))
+				api->actor->defeat(e);
+			z.e = 0;
+			return true;
+		}
+		return false;
+	}
+	// Mario coming down on a frozen enemy's top: it breaks, and he bounces off as off any enemy
+	bool stompedOn(Zap& z)
+	{
+		SmsPlayer m;
+		if (!mario(&m) || m.velocity.y >= 0)
+			return false;
+		float rad = 0, tall = 0;
+		api->actor->hit_size(z.e, &rad, &tall);
+		rad = rad > 10.0f ? rad : 40.0f, tall = tall > 10.0f ? tall : 80.0f;
+		const float dx = m.position.x - z.bx, dz = m.position.z - z.bz, dy = m.position.y - z.by;
+		if (dx * dx + dz * dz > (rad + 30.0f) * (rad + 30.0f) || dy < tall * 0.5f || dy > tall + 60.0f)
+			return false;
+		if (!shatter(z.e))
+			return false;
+		SmsVec3 v = m.velocity;
+		v.y = 30.0f;
+		api->player->set_velocity(&v);
+		return true;
+	}
+	// the chunks: two dozen bits of ice flying out and up from where it stood, tumbling, falling, gone in 1.2 s
+	void drawShatters()
+	{
+		for (int i = 0; i < kShatters; i++) {
+			const Shatter& sh = shatters[i];
+			const float t = time - sh.start;
+			if (sh.start < 0 || t > 1.2f)
+				continue;
+			for (int k = 0; k < 24; k++) {
+				const uint32_t key = (uint32_t)(i * 97 + k) * 2654435761u;
+				const float a = hash01(key) * 6.2832f, up = 200.0f + 350.0f * hash01(key + 1u), out = 120.0f + 260.0f * hash01(key + 2u);
+				const float h0 = sh.tall * (0.15f + 0.8f * hash01(key + 3u));
+				V3 c(sh.at.x + cosf(a) * (out * t + sh.rad * 0.4f), sh.at.y + h0 + up * t - 900.0f * t * t, sh.at.z + sinf(a) * (out * t + sh.rad * 0.4f));
+				if (c.y < sh.at.y)
+					c.y = sh.at.y;
+				const float size = (6.0f + 14.0f * hash01(key + 4u)) * (sh.rad / 40.0f) * (t > 0.9f ? (1.2f - t) / 0.3f : 1.0f);
+				const float spin = t * 12.0f * (hash01(key + 5u) - 0.5f) + a;
+				const float cs = cosf(spin) * size, sn = sinf(spin) * size;
+				// a little tetrahedron of ice
+				const V3 p0(c.x + cs, c.y + size * 0.3f, c.z + sn), p1(c.x - sn, c.y - size * 0.5f, c.z + cs);
+				const V3 p2(c.x - cs * 0.7f, c.y - size * 0.2f, c.z - sn * 0.7f), p3(c.x + sn * 0.3f, c.y + size, c.z - cs * 0.3f);
+				const V3* tri[4][3] = {{&p0, &p1, &p2}, {&p0, &p2, &p3}, {&p0, &p3, &p1}, {&p1, &p3, &p2}};
+				for (int f = 0; f < 4; f++)
+					for (int v = 0; v < 3; v++)
+						ac(tri[f][v]->x, tri[f][v]->y, tri[f][v]->z, f == 1 ? 240 : 190, f == 1 ? 250 : 228, 255, f == 1 ? 210 : 170);
+			}
+		}
+	}
 	// a frozen one's own colour back
 	void thaw(Zap& z)
 	{
@@ -668,6 +774,8 @@ struct Goop {
 			return;
 		if (z.e && !gone(z.e) && GOOP_HAS(api->game, SmsGameApi, object_set_tint))
 			api->game->object_set_tint(z.e, 0);
+		if (z.e && canFreeze())
+			parts->freeze_anim(z.e, 0);
 		z.frozen = false;
 	}
 
@@ -1869,7 +1977,10 @@ struct Goop {
 	{
 		const bool anyStream = players[0].kind || players[1].kind;
 		const bool fire      = grassFire();
-		if (!anyGoop() && !anyStream && drops.empty() && !fire)
+		bool anyShatter = false;
+		for (int i = 0; i < kShatters; i++)
+			anyShatter = anyShatter || (shatters[i].start >= 0 && time - shatters[i].start <= 1.2f);
+		if (!anyGoop() && !anyStream && drops.empty() && !fire && !anyShatter)
 			return;
 		if (!hasPictures())
 			return;
@@ -1890,6 +2001,8 @@ struct Goop {
 			drawStream(kind);
 			flush(texOf(kind), SMS_BLEND_SOLID);
 		}
+		drawShatters();
+		flush(0, SMS_BLEND_ALPHA);
 		// the flames last: soft, added to what is behind
 		for (int i = 0; i < kPuddles; i++)
 			if (puddles[i].on && puddles[i].kind == kFire)

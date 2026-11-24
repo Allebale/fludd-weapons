@@ -973,6 +973,21 @@ struct FluddWeapons : sms::Mod {
 		gp.mod  = handle();
 		s_goop  = &gp;
 		gp.set.ice = s_iceAsked != 0;
+		// the game's api->parts (Allebale's snowman-enemy game): frozen enemies' animations held still
+		if (SMS_API_HAS(&api(), models)) {
+			const size_t at0 = offsetof(SmsApi, models) + sizeof(void*);
+			for (int k = 0; k < 3 && !gp.parts; k++) {
+				const size_t off = at0 + k * sizeof(void*);
+				if (api().size < off + sizeof(void*))
+					break;
+				const goop::PartsLite* t = *(const goop::PartsLite* const*)((const char*)&api() + off);
+				if (t && t->magic == goop::kPartsMagic)
+					gp.parts = t;
+			}
+		}
+		info(gp.canFreeze() ? "ice goop freezes enemies' animations (the game's api->parts)" : "ice goop: this game can't hold enemies' animations still");
+		eng.breakCtx    = &gp;
+		eng.breakFrozen = [](void* ctx, SmsObject e) -> bool { return static_cast<goop::Goop*>(ctx)->shatter(e); };
 		api().core->provide(handle(), "fludd-weapons.goop", 1, &s_goopService);
 		eng.muzzleCtx = this;
 		eng.muzzle    = [](void* ctx, int pl, float* out) -> bool {
