@@ -22,7 +22,7 @@ For the stable game with mod API 1.8 (launcher Stable 1.2.0 and newer). On an ol
 ### Goop on 3D Grass (Remastered builds)
 - Electric and Black goop press 3D Grass flat, and Fire goop burns it.
 
-### Ice goop (from 1.4.0)
-- Black goop can turn to ice when another mod asks for it (the Christmas Additions mod does): white-blue ice, just as slippery and fast, and enemies it touches freeze solid before they are defeated.
+### Ice goop
+- A new setting, **Black goop or ice goop**, turns black goop into ice: white-blue, just as slippery and fast, and enemies it touches freeze solid before they are defeated. No other mod needed (the Christmas Additions mod still turns it to ice by itself).
 
 **Install:** unzip into your `mods` folder and turn it on in the Mods menu (F1).

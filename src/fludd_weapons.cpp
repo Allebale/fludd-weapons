@@ -600,6 +600,8 @@ struct FluddWeapons : sms::Mod {
 		gp.set.npcs       = setting("goop_characters", 1) != 0;
 		gp.set.defeat     = setting("weapons_defeat", 1) != 0;
 		gp.set.quality    = setting("goop_quality", 2);
+		// ice: chosen here, or asked for by another mod (the Christmas Additions mod, through the service)
+		gp.set.ice        = setting("black_goop_kind", 0) == 1 || s_iceAsked != 0;
 		gp.set.grassPress = setting("goop_grass_press", 1) != 0;
 		gp.set.grassBurn  = setting("goop_grass_burn", 1) != 0;
 	}
@@ -929,6 +931,8 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("goop_grass_burn", "Fire goop burns the grass and sets it alight (Remastered builds)", true);
 		static const char* const kQualities[] = {"Very low", "Low", "Medium", "High", "Very high"};
 		preset.optionChoice("goop_quality", "Goop quality (lower for slower PCs)", std::vector<const char*>(kQualities, kQualities + 5), 2);
+		static const char* const kBlackLooks[] = {"Black goop", "Ice goop"};
+		preset.optionChoice("black_goop_kind", "Black goop or ice goop (ice freezes enemies)", std::vector<const char*>(kBlackLooks, kBlackLooks + 2), 0);
 		preset.check();
 
 		// the D-pad, once a frame
