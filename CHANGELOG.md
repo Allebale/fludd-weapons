@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.1
+
+- **Back in, from the 1.3.1 and 1.3.2 pre-releases** (1.4.0 left them out by mistake): shooter aim in
+  third person (hold L: over-the-shoulder camera, crosshair, mouse aim, its settings), Coin Magnet, the
+  rocket jump controller button, goop on 3D Grass, and Mario turning and diving properly while aiming.
+
 ## 1.4.0
 
 - **Stable game:** built with the final mod SDK 1.8.0, for the stable game (launcher Stable 1.2.0 and newer). No more pre-release, and no rebuild warning.

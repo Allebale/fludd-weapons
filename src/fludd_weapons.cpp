@@ -15,6 +15,8 @@
 #include "shots.h"
 #include "models.h"
 #include "goop.h"
+#include "coins.h"
+#include "aim.h"
 
 // the weapons (the menu's): the mod's own numbers
 enum { W_NORMAL = 0, W_SHOTGUN = 1, W_RIFLE = 2, W_BAZOOKA = 3, W_SMG = 4, W_FIRE_GOOP = 5, W_ELECTRIC_GOOP = 6, W_BLACK_GOOP = 7 };
@@ -65,6 +67,12 @@ const int kShadowCount            = 6;
 const char* const kRocketModes[] = {"Off", "Always", "While the key is held"};
 const int kRocketModeCount       = 3;
 const char* const kRocketKeys[]  = {"Left Ctrl", "Left Shift"}; // SDL key names: the keys themselves, whatever they do in the game
+// the controller's rocket jump button (each player's own): A, R or Z. The
+// game's own use of it stays (the mod only reads it)
+const char* const kRocketPads[] = {"A button", "R trigger", "Z button"};
+const uint16_t kRocketPadBits[] = {SMS_PAD_A, SMS_PAD_R, SMS_PAD_Z};
+const int kRocketPadCount       = 3;
+const float kClimbHigh          = 2000.0f; // how far above where the stage started him Mario stands for the Rifle
 const int kRocketKeyCount        = 2;
 const char* const kProjectiles[] = {"Water", "Green water balloon", "Big green water balloon"}; // the bazooka's shot seen flying
 const int kProjectileCount       = 3;
@@ -106,9 +114,15 @@ struct FluddWeapons : sms::Mod {
 	goop::Goop gp;     // the goop weapons (the mod API's tagged drops, landings, pictures)
 	SmsMesh held[3] = {}, pack[3] = {}, packGun[3] = {}; // the weapons' models (api->models)
 	bool modelsMade = false;
+	coins::Magnet magnet;       // the Rifle's Coin Magnet
+	aim::Shoulder shoulder;     // the shoulder aim (a third-person shooter's)
+	int aimKey = -1;            // its key (key.aim; none by default: L is the controller's)
+	double lastCamera = 0;
 	float muzzleOf[2][3] = {};  // each player's pack's gun's muzzle, as last placed (third person)
 	SmsVec3 muzzleMario[2] = {}; // where Mario was then
 	double muzzleAt[2]     = {-10.0, -10.0};
+	float downT[2]         = {};          // each player's pack's gun turned down (third person rocket jump), 0 to 1
+	double downTime[2]     = {-1.0, -1.0}; // when it was last turned
 	double underAt  = -10.0; // the last SMS_EV_DRAW_UNDER_HUD (the game draws mods under its HUD)
 	float viewFar = 1.0f; // the long range given the game (game->set_view_distance)
 	bool playing = true; // the stage's opening is over (SMS_EV_STAGE_START): the player has the controls
@@ -144,6 +158,12 @@ struct FluddWeapons : sms::Mod {
 	double toastUntil = 0;
 	const char* toastText = "";
 	int toastPlayer = 0;
+	bool toastAll   = false; // for both players (a nozzle's weapons picked up), no player's name
+	// "Weapons come from nozzles": the weapons picked up in this stage (bits by kWeaponNames' index)
+	uint32_t unlocked = 0;
+	float startY    = 0.0f;  // where player 1 started the stage, up and down (climbing high gives the Rifle)
+	bool haveStart  = false;
+	uint32_t luck   = 2463534242u; // a 1-Up's random weapon
 
 	// co-op: the players, and the game's api acting on one (-1: the one the game runs as)
 	int players() const
@@ -198,6 +218,8 @@ struct FluddWeapons : sms::Mod {
 			return true;
 		char key[32];
 		snprintf(key, sizeof key, "weapon_on_%d", w);
+		if (setting("weapons_from_nozzles", 1) && !(unlocked & (1u << w))) // not picked up in this stage yet
+			return false;
 		return setting(key, 1) != 0;
 	}
 
@@ -249,6 +271,34 @@ struct FluddWeapons : sms::Mod {
 		toastText   = text;
 		toastUntil  = core().time() + 1.5;
 		toastPlayer = cur;
+		toastAll    = false;
+	}
+
+	// a nozzle picked up with "Weapons come from nozzles" on: its weapons for the rest of the stage
+	// (the rocket the Bazooka, the turbo the goop weapons, the hover the Submachine gun)
+	void nozzlePicked(int nozzle)
+	{
+		uint32_t bits = 0;
+		const char* text = nullptr;
+		if (nozzle == 1)
+			bits = 1u << 3, text = "Bazooka picked up";
+		else if (nozzle == 5)
+			bits = (1u << 4) | (1u << 5) | (1u << 6), text = "Goop weapons picked up";
+		else if (nozzle == 4)
+			bits = 1u << 2, text = "Submachine gun picked up";
+		unlockWeapons(bits, text);
+	}
+
+	// weapons got for the rest of the stage ("Weapons come from nozzles"), with a notice
+	void unlockWeapons(uint32_t bits, const char* text)
+	{
+		if (!bits || (unlocked & bits) == bits)
+			return;
+		unlocked |= bits;
+		toastText  = text;
+		toastUntil = core().time() + 3.0;
+		toastAll   = true;
+		info("%s", text);
 	}
 
 	// D-pad left and right: the weapon (each player's own controller; the number keys player 1's)
@@ -336,11 +386,11 @@ struct FluddWeapons : sms::Mod {
 	}
 
 	// Rocket jumps now: the setting, and with "While the key is held" the key (Left Ctrl or Left Shift)
-	// Left Ctrl, Left Shift or a controller's L held: Mario's own voice muted (his rocket jump's cries alone)
+	// Left Ctrl, Left Shift or the controller's rocket jump button held: Mario's own voice muted (his rocket jump's cries alone)
 	bool muteKeysHeld() const
 	{
 		const SmsPad p = pad(cur);
-		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
+		if (padRocketHeld(p))
 			return true;
 		for (int k = 0; k < kRocketKeyCount && cur == 0; k++) { // (the keyboard: player 1's)
 			const int sc = input().key_from_name(kRocketKeys[k]);
@@ -352,14 +402,14 @@ struct FluddWeapons : sms::Mod {
 
 	// The bazooka's shots on walking enemies: in the air they defeat them at once (2, the
 	// "rocket_air_pop" setting), and while the rocket jump key is held those on the ground are thrown
-	// up (1, "rocket_key_launch"). The keyboard's key is player 1's; a controller's L anyone's.
+	// up (1, "rocket_key_launch"). The keyboard's key is player 1's; the controller's button anyone's.
 	int keyLaunchNow() const
 	{
 		const int pop = setting("rocket_air_pop", 1) ? 2 : 0;
 		if (!setting("rocket_key_launch", 1))
 			return pop;
 		const SmsPad p = pad(cur);
-		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
+		if (padRocketHeld(p))
 			return pop | 1;
 		if (cur != 0)
 			return pop;
@@ -372,6 +422,69 @@ struct FluddWeapons : sms::Mod {
 	// out), and in third person (the setting) FLUDD drawn as the weapon's pack with the weapon on it,
 	// kicking back as it fires. Hidden while Mario climbs (his hands busy; FLUDD as itself on his
 	// back) and held in view once he is dead.
+	// How far back the pack's gun goes, turned down, to sit right against the pack's back with no gap:
+	// the level frame (y ahead, z up) cut into thin slices up and down; in each the gun's front
+	// (turned down, its top side faces Mario) is kept behind the pack's back where they are side by
+	// side, from the pack's triangles as it sits now. The least that keeps them apart in every slice.
+	float downShift(int which, const float B[3][4], const float L[3][4], const float off[3]) const
+	{
+		const float py = wmodels::kPivotY, pz = wmodels::kPivotZ;
+		const wmodels::Source& g = wmodels::kPackGun[which];
+		// the gun turned down (about the pivot, no slide): y = off1 + (z - pz), z = off2 - (y - py)
+		float zLo = 1e30f, zHi = -1e30f, half = 0.0f;
+		for (int i = 0; i < g.corners; i++) {
+			const float* c = g.pos + 3 * i;
+			const float z  = off[2] - (c[1] - py);
+			zLo  = z < zLo ? z : zLo;
+			zHi  = z > zHi ? z : zHi;
+			half = fabsf(c[0]) > half ? fabsf(c[0]) : half;
+		}
+		const int kSlices  = 96;
+		const float step   = (zHi - zLo) / (float)kSlices + 1e-3f;
+		float gunFront[kSlices], packBack[kSlices];
+		for (int k = 0; k < kSlices; k++)
+			gunFront[k] = -1e30f, packBack[k] = 1e30f;
+		for (int i = 0; i < g.corners; i++) {
+			const float* c = g.pos + 3 * i;
+			const int k    = (int)((off[2] - (c[1] - py) - zLo) / step);
+			const float y  = off[1] + (c[2] - pz);
+			if (k >= 0 && k < kSlices && y > gunFront[k])
+				gunFront[k] = y;
+		}
+		// the pack in the level frame (its corners, and points along its triangles' edges)
+		const wmodels::Source& pk = wmodels::kPack[which];
+		float lv[3][3];
+		for (int t = 0; t + 2 < pk.corners; t += 3) {
+			for (int v = 0; v < 3; v++) {
+				const float* p = pk.pos + 3 * (t + v);
+				float w[3];
+				for (int r = 0; r < 3; r++)
+					w[r] = B[r][0] * p[0] + B[r][1] * p[1] + B[r][2] * p[2];
+				for (int c = 0; c < 3; c++)
+					lv[v][c] = L[0][c] * w[0] + L[1][c] * w[1] + L[2][c] * w[2];
+			}
+			for (int e = 0; e < 3; e++) {
+				const float* a = lv[e];
+				const float* b = lv[(e + 1) % 3];
+				for (int n = 0; n <= 4; n++) {
+					const float f = (float)n / 4.0f;
+					const float x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f, z = a[2] + (b[2] - a[2]) * f;
+					if (fabsf(x - off[0]) > half + 1.0f) // not beside the gun
+						continue;
+					const int k = (int)((z - zLo) / step);
+					if (k >= 0 && k < kSlices && y < packBack[k])
+						packBack[k] = y;
+				}
+			}
+		}
+		// (negative: a gap to close, forward)
+		float shift = -1e30f;
+		for (int k = 0; k < kSlices; k++)
+			if (gunFront[k] > -1e29f && packBack[k] < 1e29f && gunFront[k] - packBack[k] + 0.3f > shift)
+				shift = gunFront[k] - packBack[k] + 0.3f;
+		return shift > -1e29f ? shift : 0.0f;
+	}
+
 	void drawModels(int pl, int w, const SmsHeldFluddState& s)
 	{
 		const SmsApi& a = api();
@@ -424,7 +537,20 @@ struct FluddWeapons : sms::Mod {
 				const float t    = (float)(eng.time - ep.shotAt);
 				const float ph   = t >= 0.0f && t < len ? t / len : -1.0f;
 				const float kick = ph >= 0.0f ? (1.0f - ph) * (1.0f - ph) : 0.0f;
-				const float back = kick * wmodels::kKickBack[which], tilt = kick * wmodels::kKickTilt[which];
+				// third person rocket jump: turned down behind him, bending back from where it sits (its
+				// barrel swung over behind the pack, the muzzle down at his heels), and back again
+				const bool wantDown = which == 1 && !(s.first_person && s.held) && thirdRocketDown();
+				const double now    = eng.time;
+				const float dt      = downTime[pl & 1] >= 0.0 && now > downTime[pl & 1] ? (float)(now - downTime[pl & 1]) : 0.0f;
+				downTime[pl & 1]    = now;
+				float& dn           = downT[pl & 1];
+				dn += (wantDown ? 1.0f : -1.0f) * dt * 7.0f; // about 0.15 s either way
+				dn = dn < 0.0f ? 0.0f : dn > 1.0f ? 1.0f : dn;
+				const float ease  = dn * dn * (3.0f - 2.0f * dn);
+				const float early = dn < 0.5f ? dn * 2.0f : 1.0f; // back first, so it turns behind the pack
+				const float slide = dn > 0.0f ? early * early * (3.0f - 2.0f * early) * downShift(which, B, L, off) : 0.0f;
+				const float back  = kick * wmodels::kKickBack[which] + slide,
+				            tilt  = kick * wmodels::kKickTilt[which] - ease * 1.5707963f;
 				const float c = cosf(tilt), sn = sinf(tilt);
 				const float place[3][4] = {{1, 0, 0, off[0]},
 				                           {0, c, -sn, off[1] + py - (c * py - sn * pz) - back - py},
@@ -474,6 +600,8 @@ struct FluddWeapons : sms::Mod {
 		gp.set.npcs       = setting("goop_characters", 1) != 0;
 		gp.set.defeat     = setting("weapons_defeat", 1) != 0;
 		gp.set.quality    = setting("goop_quality", 2);
+		gp.set.grassPress = setting("goop_grass_press", 1) != 0;
+		gp.set.grassBurn  = setting("goop_grass_burn", 1) != 0;
 	}
 
 	// long range: how many times further than the game's own enemies are seen and move
@@ -483,11 +611,21 @@ struct FluddWeapons : sms::Mod {
 		return kRangeScale[r >= 0 && r < kRangeCount ? r : 0];
 	}
 
-	// the rocket jump key held now (the keyboard's: player 1's) or a controller's L
+	// the controller's rocket jump button held (the setting's; R also its trigger half way)
+	bool padRocketHeld(const SmsPad& p) const
+	{
+		const int b = setting("rocket_jump_pad", 0);
+		const int i = b >= 0 && b < kRocketPadCount ? b : 0;
+		if (i == 1) // the trigger pressed half way counts too
+			return (p.held & SMS_PAD_R) || p.trigger_r >= 0.5f;
+		return (p.held & kRocketPadBits[i]) != 0;
+	}
+
+	// the rocket jump key held now (the keyboard's: player 1's) or the controller's rocket jump button
 	bool rocketKeyHeld() const
 	{
 		const SmsPad p = pad(cur);
-		if ((p.held & SMS_PAD_L) || p.trigger_l >= 0.5f)
+		if (padRocketHeld(p))
 			return true;
 		if (cur != 0)
 			return false;
@@ -496,14 +634,19 @@ struct FluddWeapons : sms::Mod {
 		return sc > 0 && input().key_down(sc);
 	}
 
+	// third person: rocket jumps on there and the rocket jump key (or the controller's button) held, the
+	// bazooka on his back turned down behind him
+	bool thirdRocketDown() const
+	{
+		return setting("rocket_jump_third", 0) && setting("rocket_jump", 2) != 0 && rocketKeyHeld();
+	}
+
 	bool rocketJumpOn() const
 	{
 		const int mode = setting("rocket_jump", 2);
 		if (mode != 2)
 			return mode == 1;
-		const int k  = setting("rocket_jump_key", 1);
-		const int sc = input().key_from_name(kRocketKeys[k >= 0 && k < kRocketKeyCount ? k : 0]);
-		return sc > 0 && input().key_down(sc);
+		return rocketKeyHeld(); // the key, or the controller's button
 	}
 
 	// A weapon's numbers from the menu for this mod's shots
@@ -539,16 +682,18 @@ struct FluddWeapons : sms::Mod {
 			s.hitSize  = (float)setting("smg_hit", 100) / 100.0f;
 			s.dropSize = (float)setting("smg_blob", 20) / 100.0f;
 		} else if (w == W_BAZOOKA) {
-			const bool jump = rocketJumpOn();
+			const bool down = !inView && thirdRocketDown();
+			const bool jump = inView ? rocketJumpOn() : down;
 			s.every    = (float)setting("bazooka_rate", 8) / 10.0f;
 			s.range    = (float)setting("bazooka_range", 100) / 100.0f;
 			s.toDefeat = setting("bazooka_defeat", 3);
 			s.water    = setting("bazooka_water", 60);
-			s.burst    = (float)setting(inView && jump ? "bazooka_burst_jump" : inView ? "bazooka_burst" : "bazooka_burst_third", inView ? 130 : 400) / 100.0f;
+			s.burst    = (float)setting(jump ? "bazooka_burst_jump" : inView ? "bazooka_burst" : "bazooka_burst_third", inView || jump ? 130 : 400) / 100.0f;
+			s.aimDown  = down;
 			s.push     = (float)setting(inView ? "bazooka_push" : "bazooka_push_third", inView ? 200 : 800) / 100.0f;
 			s.lift     = (float)setting("bazooka_lift", 40) / 100.0f;
-			s.selfJump    = jump ? (float)setting("rocket_jump_power", 130) / 100.0f : 0.0f;
-			s.feetForward = (float)setting("rocket_jump_feet", 50) / 100.0f;
+			s.selfJump    = jump ? (float)setting(down ? "rocket_jump_power_third" : "rocket_jump_power", down ? 150 : 130) / 100.0f : 0.0f;
+			s.feetForward = (float)setting(down ? "rocket_jump_feet_third" : "rocket_jump_feet", down ? 30 : 50) / 100.0f;
 			s.hurt        = setting("rocket_jump_hurt", 1) != 0;
 			s.cry         = setting("rocket_jump_ouch", 1) != 0;
 			s.cryVolume   = (float)setting("rocket_jump_cry_volume", 40) / 100.0f;
@@ -673,6 +818,7 @@ struct FluddWeapons : sms::Mod {
 	{
 		preset.addRow();
 		preset.optionBool("weapons", "FLUDD weapons, D-pad left and right", true);
+		preset.optionBool("weapons_from_nozzles", "Weapons picked up in each level (nozzles, coins, fire, shocks and more)", true);
 		preset.optionBool("weapon_on_1", "Rifle on", true);
 		preset.optionBool("weapon_on_2", "Submachine gun on", true);
 		preset.optionBool("weapon_on_3", "Bazooka on", true);
@@ -735,6 +881,9 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("bazooka_air_forward", "Bazooka pushes enemies in the air forward, not up", true);
 		preset.optionChoice("rocket_jump", "Bazooka rocket jumps in first person (shoot near your feet)",
 		             std::vector<const char*>(kRocketModes, kRocketModes + kRocketModeCount), 2);
+		preset.optionChoice("rocket_jump_pad", "Rocket jump controller button",
+		             std::vector<const char*>(kRocketPads, kRocketPads + kRocketPadCount), 0);
+		preset.optionBool("rocket_jump_third", "Bazooka rocket jumps in third person (hold the rocket jump key)", false);
 		preset.optionChoice("rocket_jump_key", "Rocket jump key",
 		             std::vector<const char*>(kRocketKeys, kRocketKeys + kRocketKeyCount), 1);
 		preset.optionBool("rocket_jump_hurt", "Rocket jumps cost Mario 1 health", true);
@@ -743,10 +892,21 @@ struct FluddWeapons : sms::Mod {
 		preset.optionNumber("rocket_jump_cry_volume", "Mario's cry volume (percent)", 40, 1, 100, 1);
 		preset.optionBool("enemy_hearts", "Bazooka defeats drop a heart with rocket jumps on", true);
 		preset.optionNumber("rocket_jump_power", "Bazooka rocket jump strength (percent)", 130, 10, 300, 10);
+		preset.optionNumber("rocket_jump_power_third", "Bazooka rocket jump height in third person (percent)", 150, 10, 300, 10);
+		preset.optionBool("rifle_coin_magnet", "Enemies defeated with the Rifle's scope send their coins to you", true);
+		preset.optionBool("shoulder_aim", "Shooter aim in third person (hold L, aim with the mouse)", true);
+		preset.optionNumber("shoulder_aim_speed", "Shooter aim mouse speed (percent)", 100, 20, 300, 10);
+		preset.optionNumber("shoulder_aim_fov", "Shooter aim field of view (degrees)", 50, 30, 100, 1);
+		preset.optionChoice("shoulder_aim_invert", "Shooter aim inverted",
+		                    std::vector<const char*>(aim::kInvertNames, aim::kInvertNames + 4), 3);
+		preset.optionNumber("shoulder_aim_crosshair_x", "Shooter aim crosshair left or right (percent, right is more)", -3, -50, 50, 1);
+		preset.optionChoice("shoulder_aim_crosshair_color", "Shooter aim crosshair color",
+		                    std::vector<const char*>(aim::kCrossNames, aim::kCrossNames + aim::kCrossCount), 8);
 		preset.optionBool("rocket_key_launch", "Bazooka rocket jump key shots launch enemies up", true);
 		preset.optionBool("rocket_air_pop", "Bazooka shots defeat enemies in the air at once", true);
 		preset.optionNumber("rocket_key_launch_height", "Bazooka rocket jump key launch height (percent)", 80, 10, 300, 10);
 		preset.optionNumber("rocket_jump_feet", "Rocket jump forward boost off your feet (percent)", 50, 0, 300, 10);
+		preset.optionNumber("rocket_jump_feet_third", "Rocket jump forward boost off your feet in third person (percent)", 30, 0, 300, 10);
 		preset.optionNumber("fire_goop_defeat", "Fire goop burning time before an enemy is defeated (tenths of a second)", 5, 1, 100, 1);
 		preset.optionNumber("fire_goop_hits", "Fire goop burns before an enemy is defeated", 3, 1, 20, 1);
 		preset.optionNumber("fire_goop_water", "Fire goop water use (percent of FLUDD's)", 250, 10, 1000, 10);
@@ -765,6 +925,8 @@ struct FluddWeapons : sms::Mod {
 		preset.optionBool("goop_characters", "Goop shocks and burns friendly characters (never defeats them)", true);
 		preset.optionBool("goop_walls", "Goop sticks to walls and drips down", true);
 		preset.optionNumber("goop_wall_life", "Goop on walls lasts (seconds)", 15, 5, 300, 5);
+		preset.optionBool("goop_grass_press", "Electric and black goop press the grass down (Remastered builds)", true);
+		preset.optionBool("goop_grass_burn", "Fire goop burns the grass and sets it alight (Remastered builds)", true);
 		static const char* const kQualities[] = {"Very low", "Low", "Medium", "High", "Very high"};
 		preset.optionChoice("goop_quality", "Goop quality (lower for slower PCs)", std::vector<const char*>(kQualities, kQualities + 5), 2);
 		preset.check();
@@ -790,6 +952,10 @@ struct FluddWeapons : sms::Mod {
 		on<SmsEvPadRead>(SMS_EV_PAD_READ, [this](SmsEvPadRead& r) {
 			if (!r.pads)
 				return;
+			if (players() == 1 && setting("shoulder_aim", 1)) // the shoulder aim's button, and while aiming the stick
+				shoulder.padRead(r.pads[0], aimKey > 0 && api().input->key_down(aimKey));
+			else
+				shoulder.held = false;
 			for (int pl = 0; pl < players(); pl++) { // each player's own controller (co-op)
 				For w(*this, pl);
 				padRead(r.pads[pl]);
@@ -819,6 +985,24 @@ struct FluddWeapons : sms::Mod {
 			out[2] = self->muzzleOf[pl][2] + m.position.z - self->muzzleMario[pl].z;
 			return true;
 		};
+		magnet.api   = &api();
+		eng.rifleCtx = this;
+		eng.rifleShot = [](void* ctx, int pl, const shots::V& from, const shots::V& way, float len) {
+			FluddWeapons* self = static_cast<FluddWeapons*>(ctx);
+			(void)from, (void)way, (void)len;
+			if (self->ps[pl & 1].zoomed)  // through the scope
+				self->magnet.scopedShot(pl & 1, self->eng.time);
+		};
+		magnet.mod    = handle();
+		shoulder.api  = &api();
+		aimKey        = api().input->bind_key(handle(), "aim", "");
+		on<SmsEvActor>(SMS_EV_ACTOR_SPAWN, [this](SmsEvActor& e) { magnet.spawned(e.object, e.actor_type, eng.time); });
+		eng.defeatCtx = this;
+		eng.onDefeat  = [](void* ctx, int pl, int weapon, const shots::V& at) {
+			FluddWeapons* self = static_cast<FluddWeapons*>(ctx);
+			if (weapon == shots::RIFLE && self->setting("rifle_coin_magnet", 1))
+				self->magnet.defeated(pl, at, self->ps[pl & 1].zoomed, self->eng.time);
+		};
 		eng.washCtx  = &gp;
 		eng.washGoop = [](void* g, float x, float y, float z, float r) { static_cast<goop::Goop*>(g)->washBurst(x, y, z, r); };
 		if (ownShots())
@@ -826,10 +1010,22 @@ struct FluddWeapons : sms::Mod {
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent& ev) {
 			const SmsEvStage* st = ev.data && ev.size >= offsetof(SmsEvStage, reason) + sizeof(int) ? (const SmsEvStage*)ev.data : nullptr;
 			playing = st && st->reason == SMS_LEAVE_STATE_LOAD; // (a save state's load: straight into play)
+			if (!playing) {
+				unlocked  = 0; // a new stage: the nozzles' weapons to pick up again (a save state's load keeps them)
+				haveStart = false;
+			}
 			eng.stageReset();
 			gp.stageReset();
+			magnet.stageLoaded();
 		});
 		on(SMS_EV_STAGE_START, [this](SmsEvent&) { playing = true; });
+		// a nozzle picked up (out of its box or lying in the stage), not getting off Yoshi (his juice
+		// to the hover) nor a nozzle the stage or a cutscene gives
+		on<SmsEvPlayerNozzle>(SMS_EV_PLAYER_NOZZLE, [this](SmsEvPlayerNozzle& e) -> int {
+			if (setting("weapons_from_nozzles", 1) && e.reason == SMS_NOZZLE_SWITCH && e.from != 3 && e.from != -1 && playing)
+				nozzlePicked(e.to);
+			return SMS_CONTINUE;
+		});
 		// the bazooka with the rocket jump keys held: Mario's own voice (MSD_SE_MA_VO_* to MSD_SE_MV_*)
 		// left out, so his rocket jump's cries play alone
 		on<SmsEvSound>(SMS_EV_SOUND, [this](SmsEvSound& e) -> int {
@@ -838,12 +1034,89 @@ struct FluddWeapons : sms::Mod {
 			For f(*this, 0);
 			return weaponNow() == W_BAZOOKA && muteKeysHeld() ? SMS_CANCEL : SMS_CONTINUE;
 		});
+		// with "Weapons come from nozzles": burned (fire, fire goop) gives the Fire goop, shocked
+		// (electric goop, an electric enemy) the Electric goop, for the rest of the stage
+		on<SmsEvTick>(SMS_EV_TICK, [this](SmsEvTick& t) {
+			if (!setting("weapons_from_nozzles", 1) || !playing)
+				return;
+			const int coins = api().game->coins ? api().game->coins() : 0;
+			if (coins >= 75) // 75 coins: every weapon
+				unlockWeapons(0x7Eu, "Every weapon picked up");
+			else if (coins >= 20) // 20 coins: the Black goop
+				unlockWeapons(1u << 6, "Black goop picked up");
+			for (int pl = 0; pl < players(); pl++) {
+				For f(*this, pl);
+				SmsPlayer m = SmsPlayer();
+				m.size      = sizeof m;
+				if (!api().player->get(&m) || !m.valid)
+					continue;
+				const uint32_t st = m.status;
+				if (pl == 0 && !haveStart && m.on_ground) // where the stage starts him
+					startY = m.position.y, haveStart = true;
+				// up a tower, a windmill, a cliff: the Rifle
+				if (haveStart && m.on_ground && m.position.y - startY >= kClimbHigh)
+					unlockWeapons(1u << 1, "Rifle picked up");
+				if (m.on_yoshi) // Yoshi's juice, quick as it comes: the Submachine gun
+					unlockWeapons(1u << 2, "Submachine gun picked up");
+				if (st == 0x208B4u || st == 0x20449u || st == 0x208B7u) // MARIO_STATUS_FIRE_JUMP, _FIRE_DASH, _FIRE_DOWN
+					unlockWeapons(1u << 4, "Fire goop picked up");
+				else if (st == 0x20338u || st == 0x21313u) // MARIO_STATUS_ELECTRIC_DAMAGE, _ELEC_DOWN
+					unlockWeapons(1u << 5, "Electric goop picked up");
+			}
+		});
+		// hurt by toxic water (the stage's damaging water: hurt by the ground, not by something, while
+		// in water) gives the Electric goop too
+		on(SMS_EV_PLAYER_DAMAGE, [this](SmsEvent& ev) {
+			if (!setting("weapons_from_nozzles", 1) || !playing || !ev.data
+			    || ev.size < offsetof(SmsEvDamage, source) + sizeof(SmsObject))
+				return;
+			const SmsEvDamage& d = *(const SmsEvDamage*)ev.data;
+			if (d.underwater || d.source || d.amount <= 0)
+				return;
+			SmsPlayer m = SmsPlayer();
+			m.size      = sizeof m;
+			if (api().player->get(&m) && m.valid && m.in_water)
+				unlockWeapons(1u << 5, "Electric goop picked up");
+		});
+		// Yoshi eats a fruit: the Black goop
+		on(SMS_EV_YOSHI_EAT, [this](SmsEvent&) {
+			if (setting("weapons_from_nozzles", 1) && playing)
+				unlockWeapons(1u << 6, "Black goop picked up");
+		});
+		// a 1-Up gives a weapon not had yet
+		on<SmsEvItem>(SMS_EV_ITEM_COLLECTED, [this](SmsEvItem& e) {
+			if (!setting("weapons_from_nozzles", 1) || !playing)
+				return;
+			if (e.kind == SMS_ITEM_ONE_UP) { // a 1-Up: one weapon not had yet, by chance
+				int left[kWeaponCount], n = 0;
+				for (int w = 1; w < kWeaponCount; w++)
+					if (!(unlocked & (1u << w)))
+						left[n++] = w;
+				if (!n)
+					return;
+				luck ^= luck << 13, luck ^= luck >> 17, luck ^= luck << 5;
+				luck += (uint32_t)(core().time() * 1000.0);
+				const int w = left[luck % (uint32_t)n];
+				static char text[48];
+				snprintf(text, sizeof text, "%s picked up", kWeaponNames[w]);
+				unlockWeapons(1u << w, text);
+			}
+		});
 		on<SmsEvTick>(SMS_EV_TICK, [this](SmsEvTick& t) {
 			if (!ownShots())
 				return;
 			const bool fireNow = canFire();
 			const float dt = t.dt * 30.0f; // 30ths of a second
 			eng.time += t.dt;
+			magnet.tick(eng.time, t.dt, [this](int pl, shots::V* at) -> bool {
+				For f(*this, pl);
+				SmsPlayer m = SmsPlayer();
+				m.size      = sizeof m;
+				if (!api().player->get(&m) || !m.valid)
+					return false;
+				*at = shots::V(m.position);
+				return true;
+			});
 			for (int w = 1; w < shots::WEAPONS; w++)
 				eng.setStats(w, shotSettings(w));
 			eng.followStraight(dt);
@@ -929,10 +1202,24 @@ struct FluddWeapons : sms::Mod {
 				gp.onHitDone(e);
 		});
 
-		on<SmsEvCamera>(SMS_EV_CAMERA, [this](SmsEvCamera&) {
+		on<SmsEvCamera>(SMS_EV_CAMERA, [this](SmsEvCamera& c) {
 			cur = playerNow(); // each player's camera (co-op: the game runs as them)
 			update();
 			cur = 0;
+			// the shoulder aim: single player, third person, while playing
+			const double now = core().time();
+			float dt = (float)(now - lastCamera);
+			lastCamera = now;
+			dt = dt > 0.1f ? 0.1f : dt < 0.0f ? 0.0f : dt;
+			const bool can = setting("shoulder_aim", 1) && players() == 1 && !firstPerson() && playing && canFire() && !holding();
+			shoulder.invert = setting("shoulder_aim_invert", 3);
+			shoulder.fov    = (float)setting("shoulder_aim_fov", 50);
+			shoulder.straight = shotWeapon(chosen());
+			shoulder.crossX = setting("shoulder_aim_crosshair_x", -3) / 100.0f;
+			shoulder.camera(c, can, setting("shoulder_aim_speed", 100) / 100.0f, dt);
+			eng.aimOn    = shoulder.active;
+			eng.aimPoint = shoulder.point;
+			eng.aimWay   = shoulder.ray;
 		});
 
 		// each view as the game draws it, before its HUD: that player's scope there (under the HUD)
@@ -945,10 +1232,11 @@ struct FluddWeapons : sms::Mod {
 			if (d.mode != SMS_MODE_STAGE)
 				return;
 			drawScope(); // (co-op: each player's in their half)
+			shoulder.drawCrosshair(draw(), setting("shoulder_aim_crosshair_color", 8));
 			if (core().time() > toastUntil)
 				return;
 			char text[64];
-			snprintf(text, sizeof text, "%s%s", players() < 2 ? "" : toastPlayer ? "Player 2 " : "Player 1 ", toastText);
+			snprintf(text, sizeof text, "%s%s", players() < 2 || toastAll ? "" : toastPlayer ? "Player 2 " : "Player 1 ", toastText);
 			const float w = draw().text_width(14, text) + 20;
 			SmsRect r;
 			if (!draw().hud_slot(handle(), SMS_ANCHOR_TOP, w, 26, &r))

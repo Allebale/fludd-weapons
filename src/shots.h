@@ -100,6 +100,7 @@ struct Settings {
 	int look;        // the bazooka's shot seen flying: 0 its water, 1 a green water balloon, 2 a big one
 	bool hearts;     // the bazooka's defeats drop a heart (first person)
 	bool keepPictures; // the bazooka leaves graffiti symbols (hiding pictures) to FLUDD
+	bool aimDown;      // third person rocket jump: the pack's gun turned down behind him, shots straight down
 	bool enemySafe;  // the rocket jump key held: a burst that hits an enemy costs Mario no health
 	float viewRange;      // long range: how much further enemies are seen (1 the game's own)
 };
@@ -412,6 +413,12 @@ struct Engine {
 		m.size      = sizeof m;
 		if (!api->player->get(&m) || !m.valid)
 			return false;
+		if (aimOn) { // the shoulder aim (aim.h): to the crosshair, from about his shoulders
+			*eye = V(m.position.x, m.position.y + 110.0f, m.position.z);
+			const V to = aimPoint - *eye;
+			*f = to.len() > 200.0f ? to.unit() : aimWay;
+			return true;
+		}
 		const float a = m.yaw * (3.14159265f / 180.0f);
 		const V fwd(sinf(a), 0.0f, cosf(a));
 		*eye = V(m.position.x, m.position.y + 100.0f, m.position.z);
@@ -465,11 +472,21 @@ struct Engine {
 		float mz[3];
 		if (!inView && muzzle && muzzle(muzzleCtx, player, mz)) // the pack's gun's muzzle
 			from = V(mz[0], mz[1], mz[2]);
+		const bool down = !inView && s.aimDown; // third person rocket jump: straight down from the turned gun
+		if (down)
+			way = V(0.0f, -1.0f, 0.0f);
 		Straight* st = nullptr;
 		if (k.straight) {
 			V at;
 			const float reachNow = (weapon == SMG ? kSmgReach : kRifleReach) * (s.range < 1.0f ? s.range : 1.0f);
-			SmsObject e = target(eye, f, reachNow, weapon, s.hitSize, &at);
+			SmsObject e = 0;
+			if (down) { // the ground below the muzzle
+				at = from + way * 2000.0f;
+				SmsVec3 a = from.s(), b = at.s(), hit;
+				if (SHOTS_HAS(api->game, SmsGameApi, ray) && api->game->ray(&a, &b, &hit))
+					at = V(hit);
+			} else
+				e = target(eye, f, reachNow, weapon, s.hitSize, &at);
 			const V dv  = at - from;
 			const float l = dv.len();
 			if (l > 1.0f)
@@ -497,6 +514,8 @@ struct Engine {
 			if (st)
 				st->from = from;
 		}
+		if (weapon == RIFLE && st && !down && rifleShot) // the Coin Magnet (coins.h)
+			rifleShot(rifleCtx, player, from, way, st->aim > 1.0f ? st->aim : st->reachTo);
 		SmsWaterDrop out = SmsWaterDrop();
 		out.size        = sizeof out;
 		out.position    = from.s();
@@ -1423,7 +1442,7 @@ struct Engine {
 	// (Player 1's: the game's player table is his.)
 	void rocketJump(int player, const V& at, float r, const Settings& s, bool noHurt)
 	{
-		if (player != 0 || s.selfJump <= 0.0f || !s.inView)
+		if (player != 0 || s.selfJump <= 0.0f || (!s.inView && !s.aimDown))
 			return;
 		SmsPlayer m = SmsPlayer();
 		m.size      = sizeof m;
@@ -1744,6 +1763,9 @@ struct Engine {
 		if (h->hits >= k.toDefeat) {
 			h->hits = 0;
 			api->core->log(mod, SMS_LOG_INFO, "an enemy defeated by the %s", kNames[weapon]);
+			SmsVec3 at;
+			if (onDefeat && api->game->object_position(e, &at))
+				onDefeat(defeatCtx, player, weapon, V(at));
 			api->actor->defeat(e);
 			if (weapon == BAZOOKA && s.hearts && s.inView)
 				dropHeart(e);
@@ -1800,6 +1822,15 @@ struct Engine {
 	// where a player's shots start in third person: its pack's gun's muzzle (the models' own), if any
 	void* muzzleCtx = 0;
 	bool (*muzzle)(void* ctx, int player, float* out) = 0;
+	// told of each Rifle shot: who fired, from where, which way and how far it goes (the Coin Magnet)
+	void* rifleCtx = 0;
+	void (*rifleShot)(void* ctx, int player, const V& from, const V& way, float len) = 0;
+	// the shoulder aim (aim.h): third person shots go to the crosshair's point
+	bool aimOn = false;
+	V aimPoint, aimWay;
+	// told of each enemy a weapon's shots defeat, where it was (the Coin Magnet)
+	void* defeatCtx = 0;
+	void (*onDefeat)(void* ctx, int player, int weapon, const V& at) = 0;
 
 	// a mod's own goop washed by a burst (the goop weapons', goop.h): its own puddles too
 	void* washCtx = 0;
