@@ -585,6 +585,8 @@ struct Goop {
 	{
 		if (kind == kBlack || !e || gone(e))
 			return;
+		if (kind == kIce && inAir(e)) // ice: only what stands on the ground freezes (Allebale)
+			return;
 		const bool npc = isNpc(e);
 		if (npc && !set.npcs)
 			return;
@@ -953,6 +955,19 @@ struct Goop {
 
 	// ---------------------------------------------------------------- Mario
 
+	// off the ground: thrown up, or more than a little above the floor under it (flying ones too)
+	bool inAir(SmsObject e) const
+	{
+		if (api->actor->flags(e) & SMS_ACTOR_FLAG_AIRBORNE)
+			return true;
+		if (!GOOP_HAS(api->game, SmsGameApi, ground))
+			return false;
+		const V3 at = posOf(e);
+		const SmsVec3 up = V3(at.x, at.y + 30.0f, at.z).s();
+		SmsGround g = SmsGround();
+		g.size      = sizeof g;
+		return api->game->ground(&up, &g) && !g.water && at.y > g.floor + 25.0f;
+	}
 	mutable int slickUnder = kBlack; // the slippery goop he was last found on
 	bool onBlack(const SmsPlayer& m) const
 	{
@@ -1029,7 +1044,7 @@ struct Goop {
 	// black goop under Mario: slippery as ice and fast (his way kept from tick to tick, turning
 	// toward the game's own step times the speed only slowly), carried on after a jump off it
 	// ice goop with fast moving off: still slippery, at his own speed
-	float gearSpeed() const { return slickUnder == kIce && set.iceSlow ? 1.0f : set.blackSpeed; }
+	float gearSpeed() const { return set.blackSpeed; }
 	void blackGoop(Player& g, float dt)
 	{
 		SmsPlayer m;
@@ -1040,7 +1055,9 @@ struct Goop {
 		const float dx = m.position.x - g.prevX, dz = m.position.z - g.prevZ;
 		const bool sane = g.havePrev && fabsf(dx) < 300.0f && fabsf(dz) < 300.0f;
 		const bool air  = m.position.y > m.floor.y + 12.0f && !m.in_water;
-		if (sane && !air && onBlack(m)) {
+		if (sane && !air && onBlack(m) && slickUnder == kIce && set.iceSlow)
+			g.gliding = false; // ice goop with fast moving off: he walks on it as on the ground
+		else if (sane && !air && onBlack(m)) {
 			if (!g.gliding)
 				g.glideX = dx, g.glideZ = dz, g.gliding = true;
 			const float k = 1.0f - powf(0.5f, dt / 0.45f);
